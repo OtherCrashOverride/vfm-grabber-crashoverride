@@ -20,10 +20,10 @@
 
 // Names / devices and general config
 
-#define DRIVER_NAME	"jpeghwdec"
+#define DRIVER_NAME	"vfm_grabber"
 #define MODULE_NAME     DRIVER_NAME
 #define DEVICE_NAME 	DRIVER_NAME
-#define DEBUG_LOGFILE 	"/storage/jpeghwdec.log"
+#define DEBUG_LOGFILE 	"/storage/vfm_grabber.log"
 
 
 #define MEM_INPUT_MAX_SIZE      (4 * 1024 * 1024)	// Maximum JPEG input data size  
@@ -39,8 +39,8 @@ typedef struct
 } reserved_mem_s;
 
 // Variables
-static struct class *jpeghwdec_class;
-static struct device *jpeghwdec_dev;
+static struct class *vfm_grabber_class;
+static struct device *vfm_grabber_dev;
 
 static reserved_mem_s reserved_mem;
 
@@ -106,44 +106,44 @@ void system_log(int logtype, char *prefix, char *format, ...)
 //////////////////////////////////////////////////
 // File operations functions
 //////////////////////////////////////////////////
-static int jpeghwdec_mmap(struct file *filp, struct vm_area_struct *vma)
+static int vfm_grabber_mmap(struct file *filp, struct vm_area_struct *vma)
 {
   int ret = 0;
   return ret;
 }
 
-static long jpeghwdec_ioctl(struct file *file, unsigned int cmd, ulong arg)
+static long vfm_grabber_ioctl(struct file *file, unsigned int cmd, ulong arg)
 {
   int ret = 0;
   return ret;
 }
 
-static int jpeghwdec_open(struct inode *inode, struct file *file)
+static int vfm_grabber_open(struct inode *inode, struct file *file)
 {
   int ret = 0;
   return ret;
 }
 
-static int jpeghwdec_release(struct inode *inode, struct file *file)
+static int vfm_grabber_release(struct inode *inode, struct file *file)
 {
   int ret = 0;
   return ret;
 }
 
 
-static const struct file_operations jpeghwdec_fops = 
+static const struct file_operations vfm_grabber_fops =
 {
   .owner = THIS_MODULE,
-  .open = jpeghwdec_open,
-  .mmap = jpeghwdec_mmap,
-  .release = jpeghwdec_release,
-  .unlocked_ioctl = jpeghwdec_ioctl,
+  .open = vfm_grabber_open,
+  .mmap = vfm_grabber_mmap,
+  .release = vfm_grabber_release,
+  .unlocked_ioctl = vfm_grabber_ioctl,
 };
 
 //////////////////////////////////////////////////
 // Probe and remove functions 
 //////////////////////////////////////////////////
-static int jpeghwdec_probe(struct platform_device *pdev)
+static int vfm_grabber_probe(struct platform_device *pdev)
 {
   int ret;
 
@@ -156,24 +156,24 @@ static int jpeghwdec_probe(struct platform_device *pdev)
   }
   log_info("reserved memory retrieved successfully.\n");
 
-  ret = register_chrdev(VERSION_MAJOR, DEVICE_NAME, &jpeghwdec_fops);
+  ret = register_chrdev(VERSION_MAJOR, DEVICE_NAME, &vfm_grabber_fops);
   if (ret < 0) 
   {
      log_error("can't register major for device\n");
      return ret;
   }
 
-  jpeghwdec_class = class_create(THIS_MODULE, DEVICE_NAME);
-  if (!jpeghwdec_class)
+  vfm_grabber_class = class_create(THIS_MODULE, DEVICE_NAME);
+  if (!vfm_grabber_class)
   {
     log_error("failed to create class\n");
     return -EFAULT;
   }
 
-  jpeghwdec_dev = device_create(jpeghwdec_class, NULL,
+  vfm_grabber_dev = device_create(vfm_grabber_class, NULL,
                                         MKDEV(VERSION_MAJOR, VERSION_MINOR),
                                         NULL, DEVICE_NAME);
-  if (!jpeghwdec_dev)
+  if (!vfm_grabber_dev)
   {
     log_error("failed to create device %s", DEVICE_NAME);
     return -EFAULT;
@@ -183,11 +183,11 @@ static int jpeghwdec_probe(struct platform_device *pdev)
   return 0;
 }
 
-static int jpeghwdec_remove(struct platform_device *pdev)
+static int vfm_grabber_remove(struct platform_device *pdev)
 {
-  device_destroy(jpeghwdec_class, MKDEV(VERSION_MAJOR, VERSION_MINOR));
+  device_destroy(vfm_grabber_class, MKDEV(VERSION_MAJOR, VERSION_MINOR));
 
-  class_destroy(jpeghwdec_class);
+  class_destroy(vfm_grabber_class);
 
   unregister_chrdev(VERSION_MAJOR, DEVICE_NAME);
 
@@ -197,51 +197,51 @@ static int jpeghwdec_remove(struct platform_device *pdev)
 //////////////////////////////////////////////////
 // Module Init / Exit functions 
 //////////////////////////////////////////////////
-static const struct of_device_id jpeghwdec_dt_match[] = 
+static const struct of_device_id vfm_grabber_dt_match[] =
 {
   {
-    .compatible = "amlogic, jpeghwdec",
+    .compatible = "amlogic, vfm_grabber",
   },
   {},
 };
 
-static struct platform_driver jpeghwdec_driver = 
+static struct platform_driver vfm_grabber_driver =
 {
-  .probe = jpeghwdec_probe,
-  .remove = jpeghwdec_remove,
+  .probe = vfm_grabber_probe,
+  .remove = vfm_grabber_remove,
   .driver = 
   {
     .name = DRIVER_NAME,
     .owner = THIS_MODULE,
-    .of_match_table = jpeghwdec_dt_match,
+    .of_match_table = vfm_grabber_dt_match,
   }
 };
 
 
-static int __init jpeghwdec_init(void)
+static int __init vfm_grabber_init(void)
 {
-  if (platform_driver_register(&jpeghwdec_driver)) 
+  if (platform_driver_register(&vfm_grabber_driver))
   {
-    log_error("failed to register jpeghwdec module\n");
+    log_error("failed to register vfm_grabber module\n");
     return -ENODEV;
   }
 
   return 0;
 }
 
-static void __exit jpeghwdec_exit(void)
+static void __exit vfm_grabber_exit(void)
 {
-  platform_driver_unregister(&jpeghwdec_driver);
+  platform_driver_unregister(&vfm_grabber_driver);
   return;
 }
 
-module_init(jpeghwdec_init);
-module_exit(jpeghwdec_exit);
+module_init(vfm_grabber_init);
+module_exit(vfm_grabber_exit);
 
 //////////////////////////////////////////////////
 // Memory Setup
 //////////////////////////////////////////////////
-static int jpeghwdec_mem_device_init(struct reserved_mem *rmem, struct device *dev)
+static int vfm_grabber_mem_device_init(struct reserved_mem *rmem, struct device *dev)
 {
    memset(&reserved_mem, 0, sizeof(reserved_mem_s));
    reserved_mem.start = rmem->base;
@@ -250,14 +250,14 @@ static int jpeghwdec_mem_device_init(struct reserved_mem *rmem, struct device *d
    return 0;
 }
 
-static const struct reserved_mem_ops rmem_jpeghwdec_ops = 
+static const struct reserved_mem_ops rmem_vfm_grabber_ops =
 {
-  .device_init = jpeghwdec_mem_device_init,
+  .device_init = vfm_grabber_mem_device_init,
 };
 
-static int __init jpeghwdec_mem_setup(struct reserved_mem *rmem)
+static int __init vfm_grabber_mem_setup(struct reserved_mem *rmem)
 {
-  rmem->ops = &rmem_jpeghwdec_ops;
+  rmem->ops = &rmem_vfm_grabber_ops;
   log_info("doing share mem setup\n");
   return 0;
 }
@@ -265,8 +265,8 @@ static int __init jpeghwdec_mem_setup(struct reserved_mem *rmem)
 //////////////////////////////////////////////////
 // Module declaration
 //////////////////////////////////////////////////
-RESERVEDMEM_OF_DECLARE(DRIVER_NAME, "amlogic, jpeghwdec_memory", jpeghwdec_mem_setup);
-MODULE_DESCRIPTION("HW JPEG decoder driver");
+RESERVEDMEM_OF_DECLARE(DRIVER_NAME, "amlogic, vfm_grabber_memory", vfm_grabber_mem_setup);
+MODULE_DESCRIPTION("VFM Grabber driver");
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Lionel CHAZALLON <LongChair@hotmail.com>");
 
