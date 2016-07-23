@@ -161,7 +161,7 @@ vfm_grabber_map_dma_buf(struct dma_buf_attachment *attach,
   }
 
 //  // CMA memory will always have a single entry
-  ret = sg_alloc_table(sgt, 2, GFP_KERNEL);
+  ret = sg_alloc_table(sgt, 1, GFP_KERNEL);
   if (ret)
   {
     log_error("failed to alloc sgt.\n");
@@ -173,22 +173,10 @@ vfm_grabber_map_dma_buf(struct dma_buf_attachment *attach,
   struct canvas_s cs0;
   canvas_read(vf->canvas0Addr & 0xff, &cs0);
 
-  struct canvas_s cs1;
-  canvas_read(vf->canvas1Addr & 0xff, &cs1)
-      ;
   sg_set_page(sgt->sgl,phys_to_page(cs0.addr), vf->width * vf->height, 0);
 
   sg_dma_address(sgt->sgl) = cs0.addr;
   sg_dma_len(sgt->sgl) = vf->width * vf->height;
-
-  struct scatterlist *next;
-  next = sg_next(sgt->sgl);
-
-  sg_set_page(sgt->sgl,phys_to_page(cs1.addr), (vf->width * vf->height) >> 1, 0);
-  sg_dma_address(next) = cs1.addr;
-  sg_dma_len(next) = (vf->width * vf->height) >> 1;
-
-
 
   pr_info("vfm_grabber_map_dma_buf: vf : %d x %d\n",vf->width, vf-> height);
   pr_info("vfm_grabber_map_dma_buf: cs0 : %d x %d, cs1 : %d x %d\n", cs0.width, cs0.height, cs1.width, cs1.height);
