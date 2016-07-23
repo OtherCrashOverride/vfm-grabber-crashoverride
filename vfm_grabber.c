@@ -143,6 +143,7 @@ vfm_grabber_map_dma_buf(struct dma_buf_attachment *attach,
   int ret;
   struct sg_table *sgt = NULL;
   struct vframe_s *vf = (struct vframe_s*)attach->priv;
+  struct canvas_s cs0;
 
   log_info("vfm_grabber_map_dma_buf\n");
 
@@ -160,7 +161,7 @@ vfm_grabber_map_dma_buf(struct dma_buf_attachment *attach,
     return NULL;
   }
 
-//  // CMA memory will always have a single entry
+  // CMA memory will always have a single entry
   ret = sg_alloc_table(sgt, 1, GFP_KERNEL);
   if (ret)
   {
@@ -168,9 +169,8 @@ vfm_grabber_map_dma_buf(struct dma_buf_attachment *attach,
     return NULL;
   }
 
-//  // CMA memory should always be page aligned and,
-//  // therefore, always have a 0 offset
-  struct canvas_s cs0;
+  // CMA memory should always be page aligned and,
+  // therefore, always have a 0 offset
   canvas_read(vf->canvas0Addr & 0xff, &cs0);
 
   sg_set_page(sgt->sgl,phys_to_page(cs0.addr), vf->width * vf->height, 0);
@@ -179,7 +179,8 @@ vfm_grabber_map_dma_buf(struct dma_buf_attachment *attach,
   sg_dma_len(sgt->sgl) = vf->width * vf->height;
 
   pr_info("vfm_grabber_map_dma_buf: vf : %d x %d\n",vf->width, vf-> height);
-  pr_info("vfm_grabber_map_dma_buf: cs0 : %d x %d, cs1 : %d x %d\n", cs0.width, cs0.height, cs1.width, cs1.height);
+  pr_info("vfm_grabber_map_dma_buf: cs0 : %d x %d\n", cs0.width, cs0.height);
+  //pr_info("vfm_grabber_map_dma_buf: cs1 : %d x %d\n", cs1.width, cs1.height);
   pr_info("vfm_grabber_map_dma_buf: sgt=%p, page=%p (%p), size=%d\n",
     sgt,
     (void*)phys_to_page(vf->canvas0Addr),
