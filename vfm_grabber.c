@@ -41,11 +41,19 @@
 // types definition
 typedef struct
 {
-  unsigned long start;
-  unsigned long size;
-  unsigned long input_start;
-  unsigned long output_start;
+	unsigned long start;
+	unsigned long size;
+	unsigned long input_start;
+	unsigned long output_start;
 } reserved_mem_s;
+
+struct dma_buf_info
+{
+	unsigned long address;
+	unsigned long length;
+	//struct vframe_s *vf;
+};
+
 
 // Variables
 static vfm_grabber_dev grabber_dev;
@@ -65,44 +73,44 @@ static loff_t log_pos = 0;		// Current logfile position
 // this function writes in a user file
 void debug_log(char *prefix, char *format, ...)
 {
-  char logstr[300];
-  char fullstr[512];
-  va_list args;
-  mm_segment_t old_fs;
+	char logstr[300];
+	char fullstr[512];
+	va_list args;
+	mm_segment_t old_fs;
 
-  if (!logfile)
-  {
-    logfile = filp_open(DEBUG_LOGFILE, O_RDWR | O_CREAT, 0644);
-    if (!logfile) return;
-  }
+	if (!logfile)
+	{
+		logfile = filp_open(DEBUG_LOGFILE, O_RDWR | O_CREAT, 0644);
+		if (!logfile) return;
+	}
 
-  va_start(args, format);
-  vsprintf(logstr, format, args);
-  sprintf(fullstr,"%s : %s", prefix, logstr);
-  va_end (args);
+	va_start(args, format);
+	vsprintf(logstr, format, args);
+	sprintf(fullstr, "%s : %s", prefix, logstr);
+	va_end(args);
 
-  old_fs = get_fs();
-  set_fs(KERNEL_DS);
-  vfs_write(logfile, fullstr, strlen(fullstr), &log_pos);
-  set_fs(old_fs);
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+	vfs_write(logfile, fullstr, strlen(fullstr), &log_pos);
+	set_fs(old_fs);
 }
 
 // this function writes in the kernel log
 void system_log(int logtype, char *prefix, char *format, ...)
 {
-  char logstr[300];
-  char fullstr[512];
-  va_list args;
+	char logstr[300];
+	char fullstr[512];
+	va_list args;
 
-  va_start(args, format);
-  vsprintf(logstr, format, args);
-  sprintf(fullstr,"%s : %s", prefix, logstr);
-  va_end (args);
+	va_start(args, format);
+	vsprintf(logstr, format, args);
+	sprintf(fullstr, "%s : %s", prefix, logstr);
+	va_end(args);
 
-  if (logtype==0)
-    pr_info("%s", fullstr);
-  else
-    pr_err("%s", fullstr);
+	if (logtype == 0)
+		pr_info("%s", fullstr);
+	else
+		pr_err("%s", fullstr);
 }
 
 //#define DEBUG
@@ -117,132 +125,192 @@ void system_log(int logtype, char *prefix, char *format, ...)
 // functions prototypes
 int get_vf_size(struct vframe_s *vf);
 
+void get_vf_canvas_plane_info(struct vframe_s *vf, int planeNumber, unsigned long *outAddress, unsigned long *outSize)
+{
+	struct canvas_s canvas;
+
+	// Validate parameters
+	if (planeNumber < 0 || planeNumber > 2 ||
+		outAddress == 0 ||
+		outSize == 0)
+	{
+		log_info("get_vf_canvas_plane_info: invalid parameter(s).\n");
+		return;
+	}
+
+
+	// TODO: Validate format is NV12/21
+
+	switch (planeNumber)
+	{
+	case 0:
+		// Y data is 1 byte per pixel
+		canvas_read(vf->canvas0Addr & 0xff, &canvas);
+		*outSize = canvas.width * canvas.height;
+		break;
+
+	case 1:
+		// UV is two bytes per two horizontal and two vertical pixels
+		canvas_read(vf->canvas0Addr >> 8 & 0xff, &canvas);
+		*outSize = canvas.width * canvas.height / 2;
+		break;
+
+	case 2:
+		canvas_read(vf->canvas0Addr >> 16 & 0xff, &canvas);
+		*outSize = canvas.width * canvas.height / 2;
+		break;
+
+	default:
+		// Should not happen
+		log_info("get_vf_canvas_plane_info: invalid planeNumber.\n");
+		return;
+	}
+
+	*outAddress = canvas.addr;
+}
+
+
 //////////////////////////////////////////////////
 // DMABUF operations functions
 //////////////////////////////////////////////////
 
 static int vfm_grabber_attach_dma_buf(struct dma_buf *dmabuf,
-  struct device *dev,
-  struct dma_buf_attachment *attach)
+	struct device *dev,
+	struct dma_buf_attachment *attach)
 {
-  log_info("vfm_grabber_attach_dma_buf priv=%p\n", dmabuf->priv);
-  attach->priv = dmabuf->priv;
-  return 0;
+	log_info("vfm_grabber_attach_dma_buf priv=%p\n", dmabuf->priv);
+	attach->priv = dmabuf->priv;
+	return 0;
 }
 
 static void vfm_grabber_detach_dma_buf(struct dma_buf *dmabuf,
-  struct dma_buf_attachment *attach)
+	struct dma_buf_attachment *attach)
 {
-  log_info("vfm_grabber_detach_dma_buf priv %p\n", attach->priv);
+	log_info("vfm_grabber_detach_dma_buf priv %p\n", attach->priv);
 }
 
 static struct sg_table *
 vfm_grabber_map_dma_buf(struct dma_buf_attachment *attach,
-  enum dma_data_direction dir)
+	enum dma_data_direction dir)
 {
-  int ret;
-  struct sg_table *sgt = NULL;
-  struct vframe_s *vf = (struct vframe_s*)attach->priv;
-  struct canvas_s cs0;
+	int ret;
+	struct sg_table *sgt = NULL;
+	struct dma_buf_info* dma_buf_info_ptr = (struct dma_buf_info*)attach->priv;;
+	//struct vframe_s *vf = (struct vframe_s*)attach->priv;
+	//struct canvas_s cs0;
+	//struct canvas_s cs1;
+	//struct canvas_s cs2;
 
-  log_info("vfm_grabber_map_dma_buf\n");
+	log_info("vfm_grabber_map_dma_buf\n");
 
-  if (!vf)
-  {
-    log_error("vfm_grabber_map_dma_buf : vf is NULL");
-    return NULL;
-  }
+	//if (!vf)
+	//{
+	//  log_error("vfm_grabber_map_dma_buf : vf is NULL");
+	//  return NULL;
+	//}
 
-  // TODO: figure out how to clean this pointer up
-  sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
-  if (!sgt)
-  {
-    log_error("vfm_grabber_map_dma_buf: kzalloc failed.\n");
-    return NULL;
-  }
+	// TODO: figure out how to clean this pointer up
+	sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
+	if (!sgt)
+	{
+		log_error("vfm_grabber_map_dma_buf: kzalloc failed.\n");
+		return NULL;
+	}
 
-  // CMA memory will always have a single entry
-  ret = sg_alloc_table(sgt, 1, GFP_KERNEL);
-  if (ret)
-  {
-    log_error("failed to alloc sgt.\n");
-    return NULL;
-  }
+	// CMA memory will always have a single entry
+	ret = sg_alloc_table(sgt, 1, GFP_KERNEL);
+	if (ret)
+	{
+		log_error("failed to alloc sgt.\n");
+		return NULL;
+	}
 
-  // CMA memory should always be page aligned and,
-  // therefore, always have a 0 offset
-  canvas_read(vf->canvas0Addr & 0xff, &cs0);
+	// CMA memory should always be page aligned and,
+	// therefore, always have a 0 offset
+	//canvas_read(vf->canvas0Addr & 0xff, &cs0);
+	//canvas_read(vf->canvas0Addr >> 8 & 0xff, &cs1);
+	//canvas_read(vf->canvas0Addr >> 16 & 0xff, &cs2);
 
-  sg_set_page(sgt->sgl,phys_to_page(cs0.addr), vf->width * vf->height, 0);
+	//sg_set_page(sgt->sgl, phys_to_page(cs0.addr), get_vf_size(vf), 0);
 
-  sg_dma_address(sgt->sgl) = cs0.addr;
-  sg_dma_len(sgt->sgl) = vf->width * vf->height;
+	//sg_dma_address(sgt->sgl) = cs0.addr;
+	//sg_dma_len(sgt->sgl) = get_vf_size(vf);
 
-  pr_info("vfm_grabber_map_dma_buf: vf : %d x %d\n",vf->width, vf-> height);
-  pr_info("vfm_grabber_map_dma_buf: cs0 : %d x %d\n", cs0.width, cs0.height);
-  //pr_info("vfm_grabber_map_dma_buf: cs1 : %d x %d\n", cs1.width, cs1.height);
-  pr_info("vfm_grabber_map_dma_buf: sgt=%p, page=%p (%p), size=%d\n",
-    sgt,
-    (void*)phys_to_page(vf->canvas0Addr),
-    (void*)cs0.addr,
-    get_vf_size(vf));
+	//pr_info("vfm_grabber_map_dma_buf: vf : %d x %d\n",vf->width, vf-> height);
+	//pr_info("vfm_grabber_map_dma_buf: cs0 : %d x %d @ %lx\n", cs0.width, cs0.height, cs0.addr);
+	//pr_info("vfm_grabber_map_dma_buf: cs1 : %d x %d @ %lx\n", cs1.width, cs1.height, cs1.addr);
+	//pr_info("vfm_grabber_map_dma_buf: cs2 : %d x %d @ %lx\n", cs2.width, cs2.height, cs2.addr);
 
-  return sgt;
+	//pr_info("vfm_grabber_map_dma_buf: sgt=%p, page=%p (%p), size=%d\n",
+	//  sgt,
+	//  (void*)phys_to_page(cs0.addr),
+	//  (void*)cs0.addr,
+	//  get_vf_size(vf));
+
+	sg_set_page(sgt->sgl,
+		phys_to_page(dma_buf_info_ptr->address),
+		dma_buf_info_ptr->length,
+		0);
+
+	sg_dma_address(sgt->sgl) = dma_buf_info_ptr->address;
+	sg_dma_len(sgt->sgl) = dma_buf_info_ptr->length;
+
+	return sgt;
 }
 
 static void vfm_grabber_unmap_dma_buf(struct dma_buf_attachment *attach,
-  struct sg_table *sgt,
-  enum dma_data_direction dir)
+	struct sg_table *sgt,
+	enum dma_data_direction dir)
 {
-  // TODO: Do we clean up the sg_table* ?
-  log_info("vfm_grabber_unmap_dma_buf\n");
-  if (sgt)
-   kfree(sgt);
+	// TODO: Do we clean up the sg_table* ?
+	log_info("vfm_grabber_unmap_dma_buf\n");
+	if (sgt)
+		kfree(sgt);
 }
 
 
 static void *vfm_grabber_dmabuf_kmap_atomic(struct dma_buf *dma_buf,
-  unsigned long page_num)
+	unsigned long page_num)
 {
-  /* TODO */
-  log_info("vfm_grabber_dmabuf_kmap_atomic\n");
-  return NULL;
+	/* TODO */
+	log_info("vfm_grabber_dmabuf_kmap_atomic\n");
+	return NULL;
 }
 
 static void vfm_grabber_dmabuf_kunmap_atomic(struct dma_buf *dma_buf,
-  unsigned long page_num,
-  void *addr)
+	unsigned long page_num,
+	void *addr)
 {
-  /* TODO */
-  log_info("vfm_grabber_dmabuf_kunmap_atomic\n");
+	/* TODO */
+	log_info("vfm_grabber_dmabuf_kunmap_atomic\n");
 }
 
 static void *vfm_grabber_dmabuf_kmap(struct dma_buf *dma_buf,
-  unsigned long page_num)
+	unsigned long page_num)
 {
-  /* TODO */
-  log_info("vfm_grabber_dmabuf_kmap\n");
-  return NULL;
+	/* TODO */
+	log_info("vfm_grabber_dmabuf_kmap\n");
+	return NULL;
 }
 
 static void vfm_grabber_dmabuf_kunmap(struct dma_buf *dma_buf,
-  unsigned long page_num, void *addr)
+	unsigned long page_num, void *addr)
 {
-  /* TODO */
-  log_info("vfm_grabber_dmabuf_kunmap\n");
+	/* TODO */
+	log_info("vfm_grabber_dmabuf_kunmap\n");
 }
 
 static int vfm_grabber_dmabuf_mmap(struct dma_buf *dma_buf,
-  struct vm_area_struct *vma)
+	struct vm_area_struct *vma)
 {
-  log_info("vfm_grabber_mmap\n");
-  return 0;
+	log_info("vfm_grabber_mmap\n");
+	return 0;
 }
 
 static void vfm_grabber_dmabuf_release(struct dma_buf *dma_buf)
 {
-  // TODO
-  log_info("vfm_grabber_dmabuf_release\n");
+	// TODO
+	log_info("vfm_grabber_dmabuf_release\n");
 }
 
 static struct dma_buf_ops vfm_grabber_dmabuf_ops = {
@@ -256,43 +324,72 @@ static struct dma_buf_ops vfm_grabber_dmabuf_ops = {
   .kunmap_atomic = vfm_grabber_dmabuf_kunmap_atomic,
   .mmap = vfm_grabber_dmabuf_mmap,
  .release = vfm_grabber_dmabuf_release,
- };
+};
 
-int create_dmabuf(vfm_grabber_dev *dev, int index,struct vframe_s *vf)
+
+int create_dmabuf(vfm_grabber_dev *dev, int index, struct vframe_s *vf)
 {
-  struct dma_buf* dmabuf;
-  int flags = 0;
+	struct dma_buf* dmabuf = NULL;
+	int flags = 0;
+	struct dma_buf_info* dma_buf_info_ptr = NULL;
+	int i;
 
-  log_info("Creating dmabuf #%d on %p (size : %d)\n", index, vf->canvas0Addr, get_vf_size(vf));
 
-  dmabuf = dma_buf_export(vf, &vfm_grabber_dmabuf_ops, get_vf_size(vf),	flags);
-  if (!dmabuf)
-  {
-    log_error("Failed to create dmabuf\n");
-    return -1;
-  }
+	log_info("Creating DMABUF(S) for index #%d\n", index);
 
-  dev->buffer[index].dmabuf = dmabuf;
-  dev->buffer[index].dma_fd = dma_buf_fd(dmabuf, flags);
+	for (i = 0; i < MAX_PLANE_COUNT; ++i)
+	{
+		dma_buf_info_ptr = kzalloc(sizeof(*dma_buf_info_ptr), GFP_KERNEL);
+		if (!dma_buf_info_ptr)
+		{
+			log_error("Failed to create dma_buf_info\n");
+			goto err0;
+		}
 
-  if (dev->buffer[index].dma_fd <= 0)
-  {
-    log_error("Failed to create dmabuf file descriptor\n");
-    return -1;
-  }
+		get_vf_canvas_plane_info(vf, i, &dma_buf_info_ptr->address, &dma_buf_info_ptr->length);
 
-  return 0;
+		dmabuf = dma_buf_export(dma_buf_info_ptr, &vfm_grabber_dmabuf_ops, dma_buf_info_ptr->length, flags);
+		if (!dmabuf)
+		{
+			log_error("Failed to create dmabuf\n");
+			goto err0;
+		}
+
+		dev->buffer[index].dmabuf[i] = dmabuf;
+		dev->buffer[index].dma_fd[i] = dma_buf_fd(dmabuf, flags);
+
+		if (dev->buffer[index].dma_fd[i] < 0)
+		{
+			log_error("Failed to create dmabuf file descriptor\n");
+			goto err0;
+		}
+	}
+
+	return 0;
+
+err0:
+	// TODO: Figure out logic to clean up kzalloced data
+	return -1;
 }
 
 void release_dmabuf(vfm_grabber_dev *dev, int index)
 {
-  if (dev->buffer[index].dma_fd)
-  {
-    log_info("Releasing DMABUF #%d\n", index);
-    dma_buf_put(dev->buffer[index].dmabuf);
-    dev->buffer[index].dmabuf = NULL;
-    dev->buffer[index].dma_fd = 0;
-  }
+	int i;
+
+	log_info("Releasing DMABUF(S) for index #%d\n", index);
+
+	for (i = 0; i < MAX_PLANE_COUNT; ++i)
+	{
+		if (dev->buffer[index].dma_fd[i] > 0)
+		{
+			kfree(dev->buffer[index].dmabuf[i]->priv);
+
+			dma_buf_put(dev->buffer[index].dmabuf[i]);
+
+			dev->buffer[index].dmabuf[i] = NULL;
+			dev->buffer[index].dma_fd[i] = -1;
+		}
+	}
 }
 
 
@@ -302,146 +399,181 @@ void release_dmabuf(vfm_grabber_dev *dev, int index)
 
 int get_vf_size(struct vframe_s *vf)
 {
-  if (vf)
-  {
-    if (vf->type & VIDTYPE_VIU_NV21)
-    {
-        return (vf->width * vf->height) + ((vf->width * vf->height) >> 1);
-    }
-  }
+	struct canvas_s cs0;
 
-  return 0;
+	if (vf)
+	{
+		canvas_read(vf->canvas0Addr & 0xff, &cs0);
+
+		if (vf->type & VIDTYPE_VIU_NV21)
+		{
+			//return (vf->width * vf->height) + ((vf->width * vf->height) >> 1);
+			return (cs0.width * cs0.height) + ((cs0.width * cs0.height) >> 1);
+		}
+	}
+
+	return 0;
 }
 
 static int vfm_grabber_receiver_event_fun(int type, void *data, void *private_data)
 {
 
-  vfm_grabber_dev *dev = (vfm_grabber_dev *)private_data;
+	vfm_grabber_dev *dev = (vfm_grabber_dev *)private_data;
 
-  static struct timeval frametime;
-  int elapsedtime, i;
+	static struct timeval frametime;
+	int elapsedtime, i;
 
-  log_info("Got VFM event %d \n", type);
+	log_info("Got VFM event %d \n", type);
 
-  switch(type)
-  {
-    case VFRAME_EVENT_PROVIDER_UNREG:
-      for (i=0; i < MAX_DMABUF_FD; i++)
-        release_dmabuf(dev, i);
-    break;
+	switch (type)
+	{
+	case VFRAME_EVENT_PROVIDER_UNREG:
+		for (i = 0; i < MAX_DMABUF_FD; i++)
+			release_dmabuf(dev, i);
+		break;
 
-    case VFRAME_EVENT_PROVIDER_REG:
-    break;
+	case VFRAME_EVENT_PROVIDER_REG:
+		break;
 
-    case VFRAME_EVENT_PROVIDER_START:
-      dev->framecount = 0;
-      dev->info.frames_decoded = 0;
-      dev->info.frames_ready = 0;
-    break;
+	case VFRAME_EVENT_PROVIDER_START:
+		dev->framecount = 0;
+		dev->info.frames_decoded = 0;
+		dev->info.frames_ready = 0;
+		break;
 
-    case VFRAME_EVENT_PROVIDER_QUREY_STATE:
-     return RECEIVER_ACTIVE;
-    break;
+	case VFRAME_EVENT_PROVIDER_QUREY_STATE:
+		return RECEIVER_ACTIVE;
+		break;
 
-    case VFRAME_EVENT_PROVIDER_VFRAME_READY:
-      dev->info.frames_ready++;
-      dev->info.frames_decoded++;
+	case VFRAME_EVENT_PROVIDER_VFRAME_READY:
+		dev->info.frames_ready++;
+		dev->info.frames_decoded++;
 
-      if (dev->framecount == 0)
-        do_gettimeofday(&dev->starttime);
+		if (dev->framecount == 0)
+			do_gettimeofday(&dev->starttime);
 
-      do_gettimeofday(&frametime);
-      elapsedtime = (frametime.tv_sec * 1000000 + frametime.tv_usec) - (dev->starttime.tv_sec * 1000000 + dev->starttime.tv_usec);
+		do_gettimeofday(&frametime);
+		elapsedtime = (frametime.tv_sec * 1000000 + frametime.tv_usec) - (dev->starttime.tv_sec * 1000000 + dev->starttime.tv_usec);
 
-      dev->framecount++;
+		dev->framecount++;
 
-      log_info("Got VFRAME_EVENT_PROVIDER_VFRAME_READY, Framerate = %d / %d\n", dev->framecount, elapsedtime);
-    break;
+		log_info("Got VFRAME_EVENT_PROVIDER_VFRAME_READY, Framerate = %d / %d\n", dev->framecount, elapsedtime);
+		break;
 
-  }
+	}
 
-  return 0;
+	return 0;
 }
 
-static const struct vframe_receiver_op_s vfm_grabber_vf_receiver = {.event_cb =
-  vfm_grabber_receiver_event_fun};
+static const struct vframe_receiver_op_s vfm_grabber_vf_receiver = { .event_cb =
+  vfm_grabber_receiver_event_fun };
 
 //////////////////////////////////////////////////
 // File operations functions
 //////////////////////////////////////////////////
 static int vfm_grabber_mmap(struct file *filp, struct vm_area_struct *vma)
 {
-  int ret = 0;
-  return ret;
+	int ret = 0;
+	return ret;
 }
 
 static long vfm_grabber_ioctl(struct file *file, unsigned int cmd, ulong arg)
 {
-  int ret = 0;
-  vfm_grabber_frame frame = { 0 };
-  struct vframe_s *vf;
-  vfm_grabber_dev *dev = (vfm_grabber_dev *)(&grabber_dev);
-  int count = 20;
+	int ret = 0;
+	vfm_grabber_frame frame = { 0 };
+	struct vframe_s *vf;
+	vfm_grabber_dev *dev = (vfm_grabber_dev *)(&grabber_dev);
+	int count = 20;
+	struct canvas_s cs0;
+	int i;
 
-  switch(cmd)
-  {
-    case VFM_GRABBER_GET_FRAME:
+	switch (cmd)
+	{
+	case VFM_GRABBER_GET_FRAME:
 
-      log_info("VFM_GRABBER_GET_FRAME ioctl called\n");
-      while (count)
-      {
-        vf = vf_get(RECEIVER_NAME);
-        if (vf)
-        {
-          log_info("VFM_GRABBER_GET_FRAME ioctl peeked frame of type %d\n", vf->type);
+		log_info("VFM_GRABBER_GET_FRAME ioctl called\n");
+		while (count)
+		{
+			vf = vf_get(RECEIVER_NAME);
+			if (vf)
+			{
+				log_info("VFM_GRABBER_GET_FRAME ioctl peeked frame of type %d\n", vf->type);
 
-          // create the dmabuf fd if it's not been created yet
-          if (dev->buffer[vf->index].dma_fd == 0)
-          {
-            if (create_dmabuf(dev, vf->index, vf) < 0)
-              return -1;
-          }
+				// create the dmabuf fd if it's not been created yet
+				// TODO: 0 is a valid fd, it should be initialized and checked for -1
+				if (dev->buffer[vf->index].dma_fd[0] <= 0)
+				{
+					if (create_dmabuf(dev, vf->index, vf) < 0)
+						return -1;
+				}
 
-          frame.dma_fd = dev->buffer[vf->index].dma_fd;
-          frame.width = vf->width;
-          frame.height = vf->height;
-          frame.stride = vf->width;
-          frame.priv = vf;
+				canvas_read(vf->canvas0Addr & 0xff, &cs0);
 
-          dev->info.frames_ready--;
-          vf_put(vf, RECEIVER_NAME);
+				for (i = 0; i < MAX_PLANE_COUNT; ++i)
+				{
+					frame.dma_fd[i] = dev->buffer[vf->index].dma_fd[i];
+				}
+				frame.width = cs0.width;
+				frame.height = cs0.height;
+				frame.stride = cs0.width;
+				frame.priv = vf;
+				frame.cropWidth = vf->width;
+				frame.cropHeight = vf->height;
 
-          return copy_to_user((void*)arg, &frame, sizeof(frame));
-          break;
-        }
-        else
-        {
-          msleep(5);
-          count--;
-        }
-      }
+				//dev->info.frames_ready--;
+				//vf_put(vf, RECEIVER_NAME);
 
-      return count == 0 ? -1 : 0;
-      break;
+				return copy_to_user((void*)arg, &frame, sizeof(frame));
+				break;
+			}
+			else
+			{
+				msleep(5);
+				count--;
+			}
+		}
 
-   case VFM_GRABBER_GET_INFO:
-      return copy_to_user((void*)arg, &dev->info, sizeof(dev->info));
-    break;
-  }
+		return count == 0 ? -1 : 0;
+		break;
 
-  return ret;
+	case VFM_GRABBER_GET_INFO:
+		return copy_to_user((void*)arg, &dev->info, sizeof(dev->info));
+		break;
+
+	case VFM_GRABBER_PUT_FRAME:
+	{
+		log_info("VFM_GRABBER_PUT_FRAME ioctl called\n");
+
+		// TODO: Don't trust userspace! Need to validate vf
+
+		// Returns number of bytes that could not be copied. On success, this will be zero. 
+		ret = copy_from_user(&frame, (void*)arg, sizeof(frame));
+		if (ret != 0)
+		{
+			ret = -1;	// TODO: find an error code
+			break;
+		}
+
+		dev->info.frames_ready--;
+		vf_put(frame.priv, RECEIVER_NAME);
+		break;
+	}
+
+	}
+
+	return ret;
 }
 
 static int vfm_grabber_open(struct inode *inode, struct file *file)
 {
-  int ret = 0;
-  return ret;
+	int ret = 0;
+	return ret;
 }
 
 static int vfm_grabber_release(struct inode *inode, struct file *file)
 {
-  int ret = 0;
-  return ret;
+	int ret = 0;
+	return ret;
 }
 
 
@@ -459,63 +591,63 @@ static const struct file_operations vfm_grabber_fops =
 //////////////////////////////////////////////////
 static int vfm_grabber_probe(struct platform_device *pdev)
 {
-  int ret;
-//  // gets the work memory area
-//  ret = of_reserved_mem_device_init(&pdev->dev);
-//  if (ret == 0)
-//  {
-//     log_error("failed to retrieve reserved memory.\n");
-//     return -EFAULT;
-//  }
-//  log_info("reserved memory retrieved successfully.\n");
-  memset(&grabber_dev, 0, sizeof(grabber_dev));
+	int ret;
+	//  // gets the work memory area
+	//  ret = of_reserved_mem_device_init(&pdev->dev);
+	//  if (ret == 0)
+	//  {
+	//     log_error("failed to retrieve reserved memory.\n");
+	//     return -EFAULT;
+	//  }
+	//  log_info("reserved memory retrieved successfully.\n");
+	memset(&grabber_dev, 0, sizeof(grabber_dev));
 
-  ret = register_chrdev(VERSION_MAJOR, DEVICE_NAME, &vfm_grabber_fops);
-  if (ret < 0) 
-  {
-     log_error("can't register major for device\n");
-     return ret;
-  }
+	ret = register_chrdev(VERSION_MAJOR, DEVICE_NAME, &vfm_grabber_fops);
+	if (ret < 0)
+	{
+		log_error("can't register major for device\n");
+		return ret;
+	}
 
-  grabber_dev.version_major =  ret;
+	grabber_dev.version_major = ret;
 
-  grabber_dev.device_class = class_create(THIS_MODULE, DEVICE_NAME);
-  if (!grabber_dev.device_class)
-  {
-    log_error("failed to create class\n");
-    return -EFAULT;
-  }
+	grabber_dev.device_class = class_create(THIS_MODULE, DEVICE_NAME);
+	if (!grabber_dev.device_class)
+	{
+		log_error("failed to create class\n");
+		return -EFAULT;
+	}
 
-  grabber_dev.file_device = device_create(grabber_dev.device_class, NULL,
-                                        MKDEV(grabber_dev.version_major, VERSION_MINOR),
-                                        NULL, DEVICE_NAME);
-  if (!grabber_dev.file_device)
-  {
-    log_error("failed to create device %s", DEVICE_NAME);
-    return -EFAULT;
-  }
+	grabber_dev.file_device = device_create(grabber_dev.device_class, NULL,
+		MKDEV(grabber_dev.version_major, VERSION_MINOR),
+		NULL, DEVICE_NAME);
+	if (!grabber_dev.file_device)
+	{
+		log_error("failed to create device %s", DEVICE_NAME);
+		return -EFAULT;
+	}
 
-  // register to vfm
-  vf_receiver_init(&grabber_dev.vfm_vf_receiver, RECEIVER_NAME, &vfm_grabber_vf_receiver, &grabber_dev);
-  vf_reg_receiver(&grabber_dev.vfm_vf_receiver);
+	// register to vfm
+	vf_receiver_init(&grabber_dev.vfm_vf_receiver, RECEIVER_NAME, &vfm_grabber_vf_receiver, &grabber_dev);
+	vf_reg_receiver(&grabber_dev.vfm_vf_receiver);
 
-  log_info("driver probed successfully\n");
-  return 0;
+	log_info("driver probed successfully\n");
+	return 0;
 }
 
 static int vfm_grabber_remove(struct platform_device *pdev)
 {
-  // unregister from vfm
-  vf_unreg_receiver(&grabber_dev.vfm_vf_receiver);
-  //vf_receiver_free(&grabber_dev.vfm_vf_receiver);
+	// unregister from vfm
+	vf_unreg_receiver(&grabber_dev.vfm_vf_receiver);
+	//vf_receiver_free(&grabber_dev.vfm_vf_receiver);
 
-  device_destroy(grabber_dev.device_class, MKDEV(grabber_dev.version_major, VERSION_MINOR));
+	device_destroy(grabber_dev.device_class, MKDEV(grabber_dev.version_major, VERSION_MINOR));
 
-  class_destroy(grabber_dev.device_class);
+	class_destroy(grabber_dev.device_class);
 
-  unregister_chrdev(VERSION_MAJOR, DEVICE_NAME);
+	unregister_chrdev(VERSION_MAJOR, DEVICE_NAME);
 
-  return 0;
+	return 0;
 }
 
 //////////////////////////////////////////////////
@@ -524,7 +656,7 @@ static int vfm_grabber_remove(struct platform_device *pdev)
 static const struct of_device_id vfm_grabber_dt_match[] =
 {
   {
-    .compatible = "amlogic, vfm_grabber",
+	.compatible = "amlogic, vfm_grabber",
   },
   {},
 };
@@ -533,32 +665,32 @@ static struct platform_driver vfm_grabber_driver =
 {
   .probe = vfm_grabber_probe,
   .remove = vfm_grabber_remove,
-  .driver = 
+  .driver =
   {
-    .name = DRIVER_NAME,
-    .owner = THIS_MODULE,
-    .of_match_table = vfm_grabber_dt_match,
+	.name = DRIVER_NAME,
+	.owner = THIS_MODULE,
+	.of_match_table = vfm_grabber_dt_match,
   }
 };
 
 
 static int __init vfm_grabber_init(void)
 {
-  if (platform_driver_register(&vfm_grabber_driver))
-  {
-    log_error("failed to register vfm_grabber module\n");
-    return -ENODEV;
-  }
+	if (platform_driver_register(&vfm_grabber_driver))
+	{
+		log_error("failed to register vfm_grabber module\n");
+		return -ENODEV;
+	}
 
-  log_info("module initialized successfully\n");
-  return 0;
+	log_info("module initialized successfully\n");
+	return 0;
 }
 
 static void __exit vfm_grabber_exit(void)
 {
-  platform_driver_unregister(&vfm_grabber_driver);
-  log_info("module exited\n");
-  return;
+	platform_driver_unregister(&vfm_grabber_driver);
+	log_info("module exited\n");
+	return;
 }
 
 module_init(vfm_grabber_init);
@@ -569,11 +701,11 @@ module_exit(vfm_grabber_exit);
 //////////////////////////////////////////////////
 static int vfm_grabber_mem_device_init(struct reserved_mem *rmem, struct device *dev)
 {
-   memset(&reserved_mem, 0, sizeof(reserved_mem_s));
-   reserved_mem.start = rmem->base;
-   reserved_mem.size = rmem->size;
-   log_info("memory resource found at %lx (%lx)\n", reserved_mem.start, reserved_mem.size);
-   return 0;
+	memset(&reserved_mem, 0, sizeof(reserved_mem_s));
+	reserved_mem.start = rmem->base;
+	reserved_mem.size = rmem->size;
+	log_info("memory resource found at %lx (%lx)\n", reserved_mem.start, reserved_mem.size);
+	return 0;
 }
 
 static const struct reserved_mem_ops rmem_vfm_grabber_ops =
@@ -583,9 +715,9 @@ static const struct reserved_mem_ops rmem_vfm_grabber_ops =
 
 static int __init vfm_grabber_mem_setup(struct reserved_mem *rmem)
 {
-  rmem->ops = &rmem_vfm_grabber_ops;
-  log_info("doing share mem setup\n");
-  return 0;
+	rmem->ops = &rmem_vfm_grabber_ops;
+	log_info("doing share mem setup\n");
+	return 0;
 }
 
 //////////////////////////////////////////////////
