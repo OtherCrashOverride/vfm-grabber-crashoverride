@@ -48,7 +48,7 @@ typedef struct
 	struct dma_buf* dmabuf[MAX_PLANE_COUNT];
 } vfm_grabber_buffer;
 
-#define MAX_DMABUF_FD 16
+#define MAX_DMABUF_FD 64
 
 typedef struct
 {

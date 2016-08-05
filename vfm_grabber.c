@@ -17,6 +17,7 @@
 #include <linux/dma-buf.h>
 #include <linux/scatterlist.h>
 #include <linux/delay.h>
+#include <linux/wait.h>
 
 #include <linux/amlogic/canvas/canvas.h>
 
@@ -47,15 +48,19 @@ typedef struct
 	unsigned long output_start;
 } reserved_mem_s;
 
-struct dma_buf_info
+struct dma_buf_private_info
 {
 	unsigned long address;
 	unsigned long length;
 	//struct vframe_s *vf;
+	int index;
+	vfm_grabber_dev* dev;
 };
 
 
 // Variables
+DECLARE_WAIT_QUEUE_HEAD(waitQueue);
+
 static vfm_grabber_dev grabber_dev;
 //static struct class *vfm_grabber_class;
 //static struct device *vfm_grabber_dev;
@@ -195,7 +200,7 @@ vfm_grabber_map_dma_buf(struct dma_buf_attachment *attach,
 {
 	int ret;
 	struct sg_table *sgt = NULL;
-	struct dma_buf_info* dma_buf_info_ptr = (struct dma_buf_info*)attach->priv;;
+	struct dma_buf_private_info* dma_buf_info_ptr = (struct dma_buf_private_info*)attach->priv;
 	//struct vframe_s *vf = (struct vframe_s*)attach->priv;
 	//struct canvas_s cs0;
 	//struct canvas_s cs1;
@@ -309,8 +314,35 @@ static int vfm_grabber_dmabuf_mmap(struct dma_buf *dma_buf,
 
 static void vfm_grabber_dmabuf_release(struct dma_buf *dma_buf)
 {
+	vfm_grabber_dev *dev;
+	int index;
+	int i;
+	struct dma_buf_private_info* dma_buf_info_ptr = (struct dma_buf_private_info*)dma_buf->priv;
+
+
 	// TODO
 	log_info("vfm_grabber_dmabuf_release\n");
+
+	
+	dev = dma_buf_info_ptr->dev;
+	index = dma_buf_info_ptr->index;
+
+	for (i = 0; i < MAX_PLANE_COUNT; ++i)
+	{
+		if (dev->buffer[index].dmabuf[i] == dma_buf)
+		{
+			//kfree(dev->buffer[index].dmabuf[i]->priv);
+
+			//dma_buf_put(dev->buffer[index].dmabuf[i]);
+
+			log_info("Releasing DMABUF(S) for index #%d, plane #%d\n", index, i);
+
+			dev->buffer[index].dmabuf[i] = NULL;
+			dev->buffer[index].dma_fd[i] = -1;
+		}
+	}
+
+	kfree(dma_buf->priv);
 }
 
 static struct dma_buf_ops vfm_grabber_dmabuf_ops = {
@@ -331,7 +363,7 @@ int create_dmabuf(vfm_grabber_dev *dev, int index, struct vframe_s *vf)
 {
 	struct dma_buf* dmabuf = NULL;
 	int flags = 0;
-	struct dma_buf_info* dma_buf_info_ptr = NULL;
+	struct dma_buf_private_info* dma_buf_info_ptr = NULL;
 	int i;
 
 
@@ -345,6 +377,9 @@ int create_dmabuf(vfm_grabber_dev *dev, int index, struct vframe_s *vf)
 			log_error("Failed to create dma_buf_info\n");
 			goto err0;
 		}
+		
+		dma_buf_info_ptr->index = index;
+		dma_buf_info_ptr->dev = dev;
 
 		get_vf_canvas_plane_info(vf, i, &dma_buf_info_ptr->address, &dma_buf_info_ptr->length);
 
@@ -374,22 +409,22 @@ err0:
 
 void release_dmabuf(vfm_grabber_dev *dev, int index)
 {
-	int i;
+	//int i;
 
 	log_info("Releasing DMABUF(S) for index #%d\n", index);
 
-	for (i = 0; i < MAX_PLANE_COUNT; ++i)
-	{
-		if (dev->buffer[index].dma_fd[i] > 0)
-		{
-			kfree(dev->buffer[index].dmabuf[i]->priv);
+	//for (i = 0; i < MAX_PLANE_COUNT; ++i)
+	//{
+	//	if (dev->buffer[index].dma_fd[i] > 0)
+	//	{
+	//		kfree(dev->buffer[index].dmabuf[i]->priv);
 
-			dma_buf_put(dev->buffer[index].dmabuf[i]);
+	//		dma_buf_put(dev->buffer[index].dmabuf[i]);
 
-			dev->buffer[index].dmabuf[i] = NULL;
-			dev->buffer[index].dma_fd[i] = -1;
-		}
-	}
+	//		dev->buffer[index].dmabuf[i] = NULL;
+	//		dev->buffer[index].dma_fd[i] = -1;
+	//	}
+	//}
 }
 
 
@@ -423,13 +458,15 @@ static int vfm_grabber_receiver_event_fun(int type, void *data, void *private_da
 	static struct timeval frametime;
 	int elapsedtime, i;
 
-	log_info("Got VFM event %d \n", type);
+	//log_info("Got VFM event %d \n", type);
 
 	switch (type)
 	{
+	case VFRAME_EVENT_PROVIDER_RESET:
 	case VFRAME_EVENT_PROVIDER_UNREG:
-		for (i = 0; i < MAX_DMABUF_FD; i++)
-			release_dmabuf(dev, i);
+		//for (i = 0; i < MAX_DMABUF_FD; i++)
+		//	release_dmabuf(dev, i);
+		dev->info.frames_ready = 0;
 		break;
 
 	case VFRAME_EVENT_PROVIDER_REG:
@@ -457,7 +494,10 @@ static int vfm_grabber_receiver_event_fun(int type, void *data, void *private_da
 
 		dev->framecount++;
 
-		log_info("Got VFRAME_EVENT_PROVIDER_VFRAME_READY, Framerate = %d / %d\n", dev->framecount, elapsedtime);
+		//log_info("Got VFRAME_EVENT_PROVIDER_VFRAME_READY, Framerate = %d / %d\n", dev->framecount, elapsedtime);
+
+		wake_up(&waitQueue);
+
 		break;
 
 	}
@@ -483,28 +523,43 @@ static long vfm_grabber_ioctl(struct file *file, unsigned int cmd, ulong arg)
 	vfm_grabber_frame frame = { 0 };
 	struct vframe_s *vf;
 	vfm_grabber_dev *dev = (vfm_grabber_dev *)(&grabber_dev);
-	int count = 20;
 	struct canvas_s cs0;
 	int i;
+	int waitResult;
 
 	switch (cmd)
 	{
 	case VFM_GRABBER_GET_FRAME:
-
-		log_info("VFM_GRABBER_GET_FRAME ioctl called\n");
-		while (count)
 		{
+			if (dev->info.frames_ready < 1)
+			{
+				// Timeout after 1 second.
+				waitResult = wait_event_timeout(waitQueue,
+					dev->info.frames_ready > 0,
+					1 * HZ);
+
+				if (waitResult == 0)
+				{
+					// Timeout occured
+					return -ETIME;
+				}
+			}
+
 			vf = vf_get(RECEIVER_NAME);
 			if (vf)
 			{
-				log_info("VFM_GRABBER_GET_FRAME ioctl peeked frame of type %d\n", vf->type);
+				dev->info.frames_ready--;
+
+				//log_info("VFM_GRABBER_GET_FRAME ioctl peeked frame of type %d\n", vf->type);
 
 				// create the dmabuf fd if it's not been created yet
-				// TODO: 0 is a valid fd, it should be initialized and checked for -1
-				if (dev->buffer[vf->index].dma_fd[0] <= 0)
+				if (dev->buffer[vf->index].dmabuf[0] == NULL)
 				{
 					if (create_dmabuf(dev, vf->index, vf) < 0)
+					{
+						log_info("VFM_GRABBER_GET_FRAME create_dmabuf failed.\n");
 						return -1;
+					}
 				}
 
 				canvas_read(vf->canvas0Addr & 0xff, &cs0);
@@ -520,20 +575,17 @@ static long vfm_grabber_ioctl(struct file *file, unsigned int cmd, ulong arg)
 				frame.cropWidth = vf->width;
 				frame.cropHeight = vf->height;
 
-				//dev->info.frames_ready--;
-				//vf_put(vf, RECEIVER_NAME);
-
 				return copy_to_user((void*)arg, &frame, sizeof(frame));
-				break;
 			}
 			else
 			{
-				msleep(5);
-				count--;
+				// This should not happen
+				log_info("VFM_GRABBER_GET_FRAME ioctl bad code path.\n");
+				return -ENODATA;
 			}
-		}
 
-		return count == 0 ? -1 : 0;
+			return 0;
+		}
 		break;
 
 	case VFM_GRABBER_GET_INFO:
@@ -542,7 +594,7 @@ static long vfm_grabber_ioctl(struct file *file, unsigned int cmd, ulong arg)
 
 	case VFM_GRABBER_PUT_FRAME:
 	{
-		log_info("VFM_GRABBER_PUT_FRAME ioctl called\n");
+		//log_info("VFM_GRABBER_PUT_FRAME ioctl called\n");
 
 		// TODO: Don't trust userspace! Need to validate vf
 
@@ -554,7 +606,6 @@ static long vfm_grabber_ioctl(struct file *file, unsigned int cmd, ulong arg)
 			break;
 		}
 
-		dev->info.frames_ready--;
 		vf_put(frame.priv, RECEIVER_NAME);
 		break;
 	}
