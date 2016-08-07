@@ -456,7 +456,7 @@ static int vfm_grabber_receiver_event_fun(int type, void *data, void *private_da
 	vfm_grabber_dev *dev = (vfm_grabber_dev *)private_data;
 
 	static struct timeval frametime;
-	int elapsedtime, i;
+	int elapsedtime;
 
 	//log_info("Got VFM event %d \n", type);
 
@@ -524,6 +524,8 @@ static long vfm_grabber_ioctl(struct file *file, unsigned int cmd, ulong arg)
 	struct vframe_s *vf;
 	vfm_grabber_dev *dev = (vfm_grabber_dev *)(&grabber_dev);
 	struct canvas_s cs0;
+	struct canvas_s cs1;
+	struct canvas_s cs2;
 	int i;
 	int waitResult;
 
@@ -563,6 +565,9 @@ static long vfm_grabber_ioctl(struct file *file, unsigned int cmd, ulong arg)
 				}
 
 				canvas_read(vf->canvas0Addr & 0xff, &cs0);
+				canvas_read(vf->canvas0Addr >> 8 & 0xff, &cs1);
+				canvas_read(vf->canvas0Addr >> 16 & 0xff, &cs2);
+
 
 				for (i = 0; i < MAX_PLANE_COUNT; ++i)
 				{
@@ -574,6 +579,22 @@ static long vfm_grabber_ioctl(struct file *file, unsigned int cmd, ulong arg)
 				frame.priv = vf;
 				frame.cropWidth = vf->width;
 				frame.cropHeight = vf->height;
+
+				frame.canvas_plane0.index = cs0.index;
+				frame.canvas_plane0.addr = cs0.addr;
+				frame.canvas_plane0.width = cs0.width;
+				frame.canvas_plane0.height = cs0.height;
+
+				frame.canvas_plane1.index = cs1.index;
+				frame.canvas_plane1.addr = cs1.addr;
+				frame.canvas_plane1.width = cs1.width;
+				frame.canvas_plane1.height = cs1.height;
+
+				frame.canvas_plane2.index = cs2.index;
+				frame.canvas_plane2.addr = cs2.addr;
+				frame.canvas_plane2.width = cs2.width;
+				frame.canvas_plane2.height = cs2.height;
+
 
 				return copy_to_user((void*)arg, &frame, sizeof(frame));
 			}

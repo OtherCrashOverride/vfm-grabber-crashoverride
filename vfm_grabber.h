@@ -22,6 +22,15 @@
 
 #define MAX_PLANE_COUNT 3
 
+
+typedef struct 
+{
+	u32 index;
+	ulong addr;
+	u32 width;
+	u32 height;
+} canvas_info_t;
+
 typedef struct
 {
 	int dma_fd[MAX_PLANE_COUNT];
@@ -31,6 +40,9 @@ typedef struct
 	void *priv;
 	int cropWidth;
 	int cropHeight;
+	canvas_info_t canvas_plane0;
+	canvas_info_t canvas_plane1;
+	canvas_info_t canvas_plane2;
 } vfm_grabber_frame;
 
 typedef struct
