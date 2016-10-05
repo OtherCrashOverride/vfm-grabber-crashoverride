@@ -36,17 +36,17 @@
 #define RECEIVER_NAME   DRIVER_NAME
 #define DEBUG_LOGFILE 	"/storage/vfm_grabber.log"
 
-#define MEM_INPUT_MAX_SIZE      (4 * 1024 * 1024)	// Maximum JPEG input data size
-#define MEM_OUTPUT_MAX_SIZE     (4 * 3840 * 2160)	// Maximum decoded output size (4k)
-
-// types definition
-typedef struct
-{
-	unsigned long start;
-	unsigned long size;
-	unsigned long input_start;
-	unsigned long output_start;
-} reserved_mem_s;
+//#define MEM_INPUT_MAX_SIZE      (4 * 1024 * 1024)	// Maximum JPEG input data size
+//#define MEM_OUTPUT_MAX_SIZE     (4 * 3840 * 2160)	// Maximum decoded output size (4k)
+//
+//// types definition
+//typedef struct
+//{
+//	unsigned long start;
+//	unsigned long size;
+//	unsigned long input_start;
+//	unsigned long output_start;
+//} reserved_mem_s;
 
 struct dma_buf_private_info
 {
@@ -66,7 +66,7 @@ static vfm_grabber_dev grabber_dev;
 //static struct device *vfm_grabber_dev;
 //static struct vframe_receiver_s vfm_grabber_vf_receiver;
 
-static reserved_mem_s reserved_mem;
+//static reserved_mem_s reserved_mem;
 
 //////////////////////////////////////////////////
 // Log functions 
@@ -511,11 +511,11 @@ static const struct vframe_receiver_op_s vfm_grabber_vf_receiver = { .event_cb =
 //////////////////////////////////////////////////
 // File operations functions
 //////////////////////////////////////////////////
-static int vfm_grabber_mmap(struct file *filp, struct vm_area_struct *vma)
-{
-	int ret = 0;
-	return ret;
-}
+//static int vfm_grabber_mmap(struct file *filp, struct vm_area_struct *vma)
+//{
+//	int ret = 0;
+//	return ret;
+//}
 
 static long vfm_grabber_ioctl(struct file *file, unsigned int cmd, ulong arg)
 {
@@ -653,7 +653,7 @@ static const struct file_operations vfm_grabber_fops =
 {
   .owner = THIS_MODULE,
   .open = vfm_grabber_open,
-  .mmap = vfm_grabber_mmap,
+  //.mmap = vfm_grabber_mmap,
   .release = vfm_grabber_release,
   .unlocked_ioctl = vfm_grabber_ioctl,
 };
@@ -768,6 +768,7 @@ static void __exit vfm_grabber_exit(void)
 module_init(vfm_grabber_init);
 module_exit(vfm_grabber_exit);
 
+/*
 //////////////////////////////////////////////////
 // Memory Setup
 //////////////////////////////////////////////////
@@ -791,12 +792,14 @@ static int __init vfm_grabber_mem_setup(struct reserved_mem *rmem)
 	log_info("doing share mem setup\n");
 	return 0;
 }
+*/
+
 
 //////////////////////////////////////////////////
 // Module declaration
 //////////////////////////////////////////////////
-RESERVEDMEM_OF_DECLARE(DRIVER_NAME, "amlogic, vfm_grabber_memory", vfm_grabber_mem_setup);
+//RESERVEDMEM_OF_DECLARE(DRIVER_NAME, "amlogic, vfm_grabber_memory", vfm_grabber_mem_setup);
 MODULE_DESCRIPTION("VFM Grabber driver");
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Lionel CHAZALLON <LongChair@hotmail.com>");
+MODULE_AUTHOR("Lionel CHAZALLON <LongChair@hotmail.com>, OtherCrashOverride <OtherCrashOverride@users.noreply.github.com>");
 
