@@ -48,14 +48,14 @@
 //	unsigned long output_start;
 //} reserved_mem_s;
 
-struct dma_buf_private_info
-{
-	unsigned long address;
-	unsigned long length;
-	//struct vframe_s *vf;
-	int index;
-	vfm_grabber_dev* dev;
-};
+//struct dma_buf_private_info
+//{
+//	unsigned long address;
+//	unsigned long length;
+//	//struct vframe_s *vf;
+//	int index;
+//	vfm_grabber_dev* dev;
+//};
 
 
 // Variables
@@ -127,336 +127,336 @@ void system_log(int logtype, char *prefix, char *format, ...)
 #define log_error(fmt, arg...)  system_log(1, DRIVER_NAME, fmt, ## arg)
 #endif
 
-// functions prototypes
-int get_vf_size(struct vframe_s *vf);
-
-void get_vf_canvas_plane_info(struct vframe_s *vf, int planeNumber, unsigned long *outAddress, unsigned long *outSize)
-{
-	struct canvas_s canvas;
-
-	// Validate parameters
-	if (planeNumber < 0 || planeNumber > 2 ||
-		outAddress == 0 ||
-		outSize == 0)
-	{
-		log_info("get_vf_canvas_plane_info: invalid parameter(s).\n");
-		return;
-	}
-
-
-	// TODO: Validate format is NV12/21
-
-	switch (planeNumber)
-	{
-	case 0:
-		// Y data is 1 byte per pixel
-		canvas_read(vf->canvas0Addr & 0xff, &canvas);
-		*outSize = canvas.width * canvas.height;
-		break;
-
-	case 1:
-		// UV is two bytes per two horizontal and two vertical pixels
-		canvas_read(vf->canvas0Addr >> 8 & 0xff, &canvas);
-		*outSize = canvas.width * canvas.height / 2;
-		break;
-
-	case 2:
-		canvas_read(vf->canvas0Addr >> 16 & 0xff, &canvas);
-		*outSize = canvas.width * canvas.height / 2;
-		break;
-
-	default:
-		// Should not happen
-		log_info("get_vf_canvas_plane_info: invalid planeNumber.\n");
-		return;
-	}
-
-	*outAddress = canvas.addr;
-}
-
-
-//////////////////////////////////////////////////
-// DMABUF operations functions
-//////////////////////////////////////////////////
-
-static int vfm_grabber_attach_dma_buf(struct dma_buf *dmabuf,
-	struct device *dev,
-	struct dma_buf_attachment *attach)
-{
-	log_info("vfm_grabber_attach_dma_buf priv=%p\n", dmabuf->priv);
-	attach->priv = dmabuf->priv;
-	return 0;
-}
-
-static void vfm_grabber_detach_dma_buf(struct dma_buf *dmabuf,
-	struct dma_buf_attachment *attach)
-{
-	log_info("vfm_grabber_detach_dma_buf priv %p\n", attach->priv);
-}
-
-static struct sg_table *
-vfm_grabber_map_dma_buf(struct dma_buf_attachment *attach,
-	enum dma_data_direction dir)
-{
-	int ret;
-	struct sg_table *sgt = NULL;
-	struct dma_buf_private_info* dma_buf_info_ptr = (struct dma_buf_private_info*)attach->priv;
-	//struct vframe_s *vf = (struct vframe_s*)attach->priv;
-	//struct canvas_s cs0;
-	//struct canvas_s cs1;
-	//struct canvas_s cs2;
-
-	log_info("vfm_grabber_map_dma_buf\n");
-
-	//if (!vf)
-	//{
-	//  log_error("vfm_grabber_map_dma_buf : vf is NULL");
-	//  return NULL;
-	//}
-
-	// TODO: figure out how to clean this pointer up
-	sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
-	if (!sgt)
-	{
-		log_error("vfm_grabber_map_dma_buf: kzalloc failed.\n");
-		return NULL;
-	}
-
-	// CMA memory will always have a single entry
-	ret = sg_alloc_table(sgt, 1, GFP_KERNEL);
-	if (ret)
-	{
-		log_error("failed to alloc sgt.\n");
-		return NULL;
-	}
-
-	// CMA memory should always be page aligned and,
-	// therefore, always have a 0 offset
-	//canvas_read(vf->canvas0Addr & 0xff, &cs0);
-	//canvas_read(vf->canvas0Addr >> 8 & 0xff, &cs1);
-	//canvas_read(vf->canvas0Addr >> 16 & 0xff, &cs2);
-
-	//sg_set_page(sgt->sgl, phys_to_page(cs0.addr), get_vf_size(vf), 0);
-
-	//sg_dma_address(sgt->sgl) = cs0.addr;
-	//sg_dma_len(sgt->sgl) = get_vf_size(vf);
-
-	//pr_info("vfm_grabber_map_dma_buf: vf : %d x %d\n",vf->width, vf-> height);
-	//pr_info("vfm_grabber_map_dma_buf: cs0 : %d x %d @ %lx\n", cs0.width, cs0.height, cs0.addr);
-	//pr_info("vfm_grabber_map_dma_buf: cs1 : %d x %d @ %lx\n", cs1.width, cs1.height, cs1.addr);
-	//pr_info("vfm_grabber_map_dma_buf: cs2 : %d x %d @ %lx\n", cs2.width, cs2.height, cs2.addr);
-
-	//pr_info("vfm_grabber_map_dma_buf: sgt=%p, page=%p (%p), size=%d\n",
-	//  sgt,
-	//  (void*)phys_to_page(cs0.addr),
-	//  (void*)cs0.addr,
-	//  get_vf_size(vf));
-
-	sg_set_page(sgt->sgl,
-		phys_to_page(dma_buf_info_ptr->address),
-		dma_buf_info_ptr->length,
-		0);
-
-	sg_dma_address(sgt->sgl) = dma_buf_info_ptr->address;
-	sg_dma_len(sgt->sgl) = dma_buf_info_ptr->length;
-
-	return sgt;
-}
-
-static void vfm_grabber_unmap_dma_buf(struct dma_buf_attachment *attach,
-	struct sg_table *sgt,
-	enum dma_data_direction dir)
-{
-	// TODO: Do we clean up the sg_table* ?
-	log_info("vfm_grabber_unmap_dma_buf\n");
-	if (sgt)
-		kfree(sgt);
-}
+//// functions prototypes
+//int get_vf_size(struct vframe_s *vf);
+//
+//void get_vf_canvas_plane_info(struct vframe_s *vf, int planeNumber, unsigned long *outAddress, unsigned long *outSize)
+//{
+//	struct canvas_s canvas;
+//
+//	// Validate parameters
+//	if (planeNumber < 0 || planeNumber > 2 ||
+//		outAddress == 0 ||
+//		outSize == 0)
+//	{
+//		log_info("get_vf_canvas_plane_info: invalid parameter(s).\n");
+//		return;
+//	}
+//
+//
+//	// TODO: Validate format is NV12/21
+//
+//	switch (planeNumber)
+//	{
+//	case 0:
+//		// Y data is 1 byte per pixel
+//		canvas_read(vf->canvas0Addr & 0xff, &canvas);
+//		*outSize = canvas.width * canvas.height;
+//		break;
+//
+//	case 1:
+//		// UV is two bytes per two horizontal and two vertical pixels
+//		canvas_read(vf->canvas0Addr >> 8 & 0xff, &canvas);
+//		*outSize = canvas.width * canvas.height / 2;
+//		break;
+//
+//	case 2:
+//		canvas_read(vf->canvas0Addr >> 16 & 0xff, &canvas);
+//		*outSize = canvas.width * canvas.height / 2;
+//		break;
+//
+//	default:
+//		// Should not happen
+//		log_info("get_vf_canvas_plane_info: invalid planeNumber.\n");
+//		return;
+//	}
+//
+//	*outAddress = canvas.addr;
+//}
 
 
-static void *vfm_grabber_dmabuf_kmap_atomic(struct dma_buf *dma_buf,
-	unsigned long page_num)
-{
-	/* TODO */
-	log_info("vfm_grabber_dmabuf_kmap_atomic\n");
-	return NULL;
-}
-
-static void vfm_grabber_dmabuf_kunmap_atomic(struct dma_buf *dma_buf,
-	unsigned long page_num,
-	void *addr)
-{
-	/* TODO */
-	log_info("vfm_grabber_dmabuf_kunmap_atomic\n");
-}
-
-static void *vfm_grabber_dmabuf_kmap(struct dma_buf *dma_buf,
-	unsigned long page_num)
-{
-	/* TODO */
-	log_info("vfm_grabber_dmabuf_kmap\n");
-	return NULL;
-}
-
-static void vfm_grabber_dmabuf_kunmap(struct dma_buf *dma_buf,
-	unsigned long page_num, void *addr)
-{
-	/* TODO */
-	log_info("vfm_grabber_dmabuf_kunmap\n");
-}
-
-static int vfm_grabber_dmabuf_mmap(struct dma_buf *dma_buf,
-	struct vm_area_struct *vma)
-{
-	log_info("vfm_grabber_mmap\n");
-	return 0;
-}
-
-static void vfm_grabber_dmabuf_release(struct dma_buf *dma_buf)
-{
-	vfm_grabber_dev *dev;
-	int index;
-	int i;
-	struct dma_buf_private_info* dma_buf_info_ptr = (struct dma_buf_private_info*)dma_buf->priv;
-
-
-	// TODO
-	log_info("vfm_grabber_dmabuf_release\n");
-
-	
-	dev = dma_buf_info_ptr->dev;
-	index = dma_buf_info_ptr->index;
-
-	for (i = 0; i < MAX_PLANE_COUNT; ++i)
-	{
-		if (dev->buffer[index].dmabuf[i] == dma_buf)
-		{
-			//kfree(dev->buffer[index].dmabuf[i]->priv);
-
-			//dma_buf_put(dev->buffer[index].dmabuf[i]);
-
-			log_info("Releasing DMABUF(S) for index #%d, plane #%d\n", index, i);
-
-			dev->buffer[index].dmabuf[i] = NULL;
-			dev->buffer[index].dma_fd[i] = -1;
-		}
-	}
-
-	kfree(dma_buf->priv);
-}
-
-static struct dma_buf_ops vfm_grabber_dmabuf_ops = {
-  .attach = vfm_grabber_attach_dma_buf,
-  .detach = vfm_grabber_detach_dma_buf,
-  .map_dma_buf = vfm_grabber_map_dma_buf,
-  .unmap_dma_buf = vfm_grabber_unmap_dma_buf,
-  .kmap = vfm_grabber_dmabuf_kmap,
-  .kmap_atomic = vfm_grabber_dmabuf_kmap_atomic,
-  .kunmap = vfm_grabber_dmabuf_kunmap,
-  .kunmap_atomic = vfm_grabber_dmabuf_kunmap_atomic,
-  .mmap = vfm_grabber_dmabuf_mmap,
- .release = vfm_grabber_dmabuf_release,
-};
-
-
-int create_dmabuf(vfm_grabber_dev *dev, int index, struct vframe_s *vf)
-{
-	struct dma_buf* dmabuf = NULL;
-	int flags = 0;
-	struct dma_buf_private_info* dma_buf_info_ptr = NULL;
-	int i;
-
-
-	log_info("Creating DMABUF(S) for index #%d\n", index);
-
-	for (i = 0; i < MAX_PLANE_COUNT; ++i)
-	{
-		dma_buf_info_ptr = kzalloc(sizeof(*dma_buf_info_ptr), GFP_KERNEL);
-		if (!dma_buf_info_ptr)
-		{
-			log_error("Failed to create dma_buf_info\n");
-			goto err0;
-		}
-		
-		dma_buf_info_ptr->index = index;
-		dma_buf_info_ptr->dev = dev;
-
-		get_vf_canvas_plane_info(vf, i, &dma_buf_info_ptr->address, &dma_buf_info_ptr->length);
-
-		dmabuf = dma_buf_export(dma_buf_info_ptr, &vfm_grabber_dmabuf_ops, dma_buf_info_ptr->length, flags);
-		if (!dmabuf)
-		{
-			log_error("Failed to create dmabuf\n");
-			goto err0;
-		}
-
-		dev->buffer[index].dmabuf[i] = dmabuf;
-		dev->buffer[index].dma_fd[i] = dma_buf_fd(dmabuf, flags);
-
-		if (dev->buffer[index].dma_fd[i] < 0)
-		{
-			log_error("Failed to create dmabuf file descriptor\n");
-			goto err0;
-		}
-	}
-
-	return 0;
-
-err0:
-	// TODO: Figure out logic to clean up kzalloced data
-	return -1;
-}
-
-void release_dmabuf(vfm_grabber_dev *dev, int index)
-{
-	//int i;
-
-	log_info("Releasing DMABUF(S) for index #%d\n", index);
-
-	//for (i = 0; i < MAX_PLANE_COUNT; ++i)
-	//{
-	//	if (dev->buffer[index].dma_fd[i] > 0)
-	//	{
-	//		kfree(dev->buffer[index].dmabuf[i]->priv);
-
-	//		dma_buf_put(dev->buffer[index].dmabuf[i]);
-
-	//		dev->buffer[index].dmabuf[i] = NULL;
-	//		dev->buffer[index].dma_fd[i] = -1;
-	//	}
-	//}
-}
+////////////////////////////////////////////////////
+//// DMABUF operations functions
+////////////////////////////////////////////////////
+//
+//static int vfm_grabber_attach_dma_buf(struct dma_buf *dmabuf,
+//	struct device *dev,
+//	struct dma_buf_attachment *attach)
+//{
+//	log_info("vfm_grabber_attach_dma_buf priv=%p\n", dmabuf->priv);
+//	attach->priv = dmabuf->priv;
+//	return 0;
+//}
+//
+//static void vfm_grabber_detach_dma_buf(struct dma_buf *dmabuf,
+//	struct dma_buf_attachment *attach)
+//{
+//	log_info("vfm_grabber_detach_dma_buf priv %p\n", attach->priv);
+//}
+//
+//static struct sg_table *
+//vfm_grabber_map_dma_buf(struct dma_buf_attachment *attach,
+//	enum dma_data_direction dir)
+//{
+//	int ret;
+//	struct sg_table *sgt = NULL;
+//	struct dma_buf_private_info* dma_buf_info_ptr = (struct dma_buf_private_info*)attach->priv;
+//	//struct vframe_s *vf = (struct vframe_s*)attach->priv;
+//	//struct canvas_s cs0;
+//	//struct canvas_s cs1;
+//	//struct canvas_s cs2;
+//
+//	log_info("vfm_grabber_map_dma_buf\n");
+//
+//	//if (!vf)
+//	//{
+//	//  log_error("vfm_grabber_map_dma_buf : vf is NULL");
+//	//  return NULL;
+//	//}
+//
+//	// TODO: figure out how to clean this pointer up
+//	sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
+//	if (!sgt)
+//	{
+//		log_error("vfm_grabber_map_dma_buf: kzalloc failed.\n");
+//		return NULL;
+//	}
+//
+//	// CMA memory will always have a single entry
+//	ret = sg_alloc_table(sgt, 1, GFP_KERNEL);
+//	if (ret)
+//	{
+//		log_error("failed to alloc sgt.\n");
+//		return NULL;
+//	}
+//
+//	// CMA memory should always be page aligned and,
+//	// therefore, always have a 0 offset
+//	//canvas_read(vf->canvas0Addr & 0xff, &cs0);
+//	//canvas_read(vf->canvas0Addr >> 8 & 0xff, &cs1);
+//	//canvas_read(vf->canvas0Addr >> 16 & 0xff, &cs2);
+//
+//	//sg_set_page(sgt->sgl, phys_to_page(cs0.addr), get_vf_size(vf), 0);
+//
+//	//sg_dma_address(sgt->sgl) = cs0.addr;
+//	//sg_dma_len(sgt->sgl) = get_vf_size(vf);
+//
+//	//pr_info("vfm_grabber_map_dma_buf: vf : %d x %d\n",vf->width, vf-> height);
+//	//pr_info("vfm_grabber_map_dma_buf: cs0 : %d x %d @ %lx\n", cs0.width, cs0.height, cs0.addr);
+//	//pr_info("vfm_grabber_map_dma_buf: cs1 : %d x %d @ %lx\n", cs1.width, cs1.height, cs1.addr);
+//	//pr_info("vfm_grabber_map_dma_buf: cs2 : %d x %d @ %lx\n", cs2.width, cs2.height, cs2.addr);
+//
+//	//pr_info("vfm_grabber_map_dma_buf: sgt=%p, page=%p (%p), size=%d\n",
+//	//  sgt,
+//	//  (void*)phys_to_page(cs0.addr),
+//	//  (void*)cs0.addr,
+//	//  get_vf_size(vf));
+//
+//	sg_set_page(sgt->sgl,
+//		phys_to_page(dma_buf_info_ptr->address),
+//		dma_buf_info_ptr->length,
+//		0);
+//
+//	sg_dma_address(sgt->sgl) = dma_buf_info_ptr->address;
+//	sg_dma_len(sgt->sgl) = dma_buf_info_ptr->length;
+//
+//	return sgt;
+//}
+//
+//static void vfm_grabber_unmap_dma_buf(struct dma_buf_attachment *attach,
+//	struct sg_table *sgt,
+//	enum dma_data_direction dir)
+//{
+//	// TODO: Do we clean up the sg_table* ?
+//	log_info("vfm_grabber_unmap_dma_buf\n");
+//	if (sgt)
+//		kfree(sgt);
+//}
+//
+//
+//static void *vfm_grabber_dmabuf_kmap_atomic(struct dma_buf *dma_buf,
+//	unsigned long page_num)
+//{
+//	/* TODO */
+//	log_info("vfm_grabber_dmabuf_kmap_atomic\n");
+//	return NULL;
+//}
+//
+//static void vfm_grabber_dmabuf_kunmap_atomic(struct dma_buf *dma_buf,
+//	unsigned long page_num,
+//	void *addr)
+//{
+//	/* TODO */
+//	log_info("vfm_grabber_dmabuf_kunmap_atomic\n");
+//}
+//
+//static void *vfm_grabber_dmabuf_kmap(struct dma_buf *dma_buf,
+//	unsigned long page_num)
+//{
+//	/* TODO */
+//	log_info("vfm_grabber_dmabuf_kmap\n");
+//	return NULL;
+//}
+//
+//static void vfm_grabber_dmabuf_kunmap(struct dma_buf *dma_buf,
+//	unsigned long page_num, void *addr)
+//{
+//	/* TODO */
+//	log_info("vfm_grabber_dmabuf_kunmap\n");
+//}
+//
+//static int vfm_grabber_dmabuf_mmap(struct dma_buf *dma_buf,
+//	struct vm_area_struct *vma)
+//{
+//	log_info("vfm_grabber_mmap\n");
+//	return 0;
+//}
+//
+//static void vfm_grabber_dmabuf_release(struct dma_buf *dma_buf)
+//{
+//	vfm_grabber_dev *dev;
+//	int index;
+//	int i;
+//	struct dma_buf_private_info* dma_buf_info_ptr = (struct dma_buf_private_info*)dma_buf->priv;
+//
+//
+//	// TODO
+//	log_info("vfm_grabber_dmabuf_release\n");
+//
+//	
+//	dev = dma_buf_info_ptr->dev;
+//	index = dma_buf_info_ptr->index;
+//
+//	for (i = 0; i < MAX_PLANE_COUNT; ++i)
+//	{
+//		if (dev->buffer[index].dmabuf[i] == dma_buf)
+//		{
+//			//kfree(dev->buffer[index].dmabuf[i]->priv);
+//
+//			//dma_buf_put(dev->buffer[index].dmabuf[i]);
+//
+//			log_info("Releasing DMABUF(S) for index #%d, plane #%d\n", index, i);
+//
+//			dev->buffer[index].dmabuf[i] = NULL;
+//			dev->buffer[index].dma_fd[i] = -1;
+//		}
+//	}
+//
+//	kfree(dma_buf->priv);
+//}
+//
+//static struct dma_buf_ops vfm_grabber_dmabuf_ops = {
+//  .attach = vfm_grabber_attach_dma_buf,
+//  .detach = vfm_grabber_detach_dma_buf,
+//  .map_dma_buf = vfm_grabber_map_dma_buf,
+//  .unmap_dma_buf = vfm_grabber_unmap_dma_buf,
+//  .kmap = vfm_grabber_dmabuf_kmap,
+//  .kmap_atomic = vfm_grabber_dmabuf_kmap_atomic,
+//  .kunmap = vfm_grabber_dmabuf_kunmap,
+//  .kunmap_atomic = vfm_grabber_dmabuf_kunmap_atomic,
+//  .mmap = vfm_grabber_dmabuf_mmap,
+// .release = vfm_grabber_dmabuf_release,
+//};
+//
+//
+//int create_dmabuf(vfm_grabber_dev *dev, int index, struct vframe_s *vf)
+//{
+//	struct dma_buf* dmabuf = NULL;
+//	int flags = 0;
+//	struct dma_buf_private_info* dma_buf_info_ptr = NULL;
+//	int i;
+//
+//
+//	log_info("Creating DMABUF(S) for index #%d\n", index);
+//
+//	for (i = 0; i < MAX_PLANE_COUNT; ++i)
+//	{
+//		dma_buf_info_ptr = kzalloc(sizeof(*dma_buf_info_ptr), GFP_KERNEL);
+//		if (!dma_buf_info_ptr)
+//		{
+//			log_error("Failed to create dma_buf_info\n");
+//			goto err0;
+//		}
+//		
+//		dma_buf_info_ptr->index = index;
+//		dma_buf_info_ptr->dev = dev;
+//
+//		get_vf_canvas_plane_info(vf, i, &dma_buf_info_ptr->address, &dma_buf_info_ptr->length);
+//
+//		dmabuf = dma_buf_export(dma_buf_info_ptr, &vfm_grabber_dmabuf_ops, dma_buf_info_ptr->length, flags);
+//		if (!dmabuf)
+//		{
+//			log_error("Failed to create dmabuf\n");
+//			goto err0;
+//		}
+//
+//		dev->buffer[index].dmabuf[i] = dmabuf;
+//		dev->buffer[index].dma_fd[i] = dma_buf_fd(dmabuf, flags);
+//
+//		if (dev->buffer[index].dma_fd[i] < 0)
+//		{
+//			log_error("Failed to create dmabuf file descriptor\n");
+//			goto err0;
+//		}
+//	}
+//
+//	return 0;
+//
+//err0:
+//	// TODO: Figure out logic to clean up kzalloced data
+//	return -1;
+//}
+//
+//void release_dmabuf(vfm_grabber_dev *dev, int index)
+//{
+//	//int i;
+//
+//	log_info("Releasing DMABUF(S) for index #%d\n", index);
+//
+//	//for (i = 0; i < MAX_PLANE_COUNT; ++i)
+//	//{
+//	//	if (dev->buffer[index].dma_fd[i] > 0)
+//	//	{
+//	//		kfree(dev->buffer[index].dmabuf[i]->priv);
+//
+//	//		dma_buf_put(dev->buffer[index].dmabuf[i]);
+//
+//	//		dev->buffer[index].dmabuf[i] = NULL;
+//	//		dev->buffer[index].dma_fd[i] = -1;
+//	//	}
+//	//}
+//}
 
 
 //////////////////////////////////////////////////
 // VFM operations functions
 //////////////////////////////////////////////////
 
-int get_vf_size(struct vframe_s *vf)
-{
-	struct canvas_s cs0;
-
-	if (vf)
-	{
-		canvas_read(vf->canvas0Addr & 0xff, &cs0);
-
-		if (vf->type & VIDTYPE_VIU_NV21)
-		{
-			//return (vf->width * vf->height) + ((vf->width * vf->height) >> 1);
-			return (cs0.width * cs0.height) + ((cs0.width * cs0.height) >> 1);
-		}
-	}
-
-	return 0;
-}
+//int get_vf_size(struct vframe_s *vf)
+//{
+//	struct canvas_s cs0;
+//
+//	if (vf)
+//	{
+//		canvas_read(vf->canvas0Addr & 0xff, &cs0);
+//
+//		if (vf->type & VIDTYPE_VIU_NV21)
+//		{
+//			//return (vf->width * vf->height) + ((vf->width * vf->height) >> 1);
+//			return (cs0.width * cs0.height) + ((cs0.width * cs0.height) >> 1);
+//		}
+//	}
+//
+//	return 0;
+//}
 
 static int vfm_grabber_receiver_event_fun(int type, void *data, void *private_data)
 {
 
 	vfm_grabber_dev *dev = (vfm_grabber_dev *)private_data;
 
-	static struct timeval frametime;
-	int elapsedtime;
+	//static struct timeval frametime;
+	//int elapsedtime;
 
 	//log_info("Got VFM event %d \n", type);
 
@@ -466,16 +466,18 @@ static int vfm_grabber_receiver_event_fun(int type, void *data, void *private_da
 	case VFRAME_EVENT_PROVIDER_UNREG:
 		//for (i = 0; i < MAX_DMABUF_FD; i++)
 		//	release_dmabuf(dev, i);
-		dev->info.frames_ready = 0;
+		//dev->info.frames_ready = 0;
+		dev->ready_count = 0;
 		break;
 
 	case VFRAME_EVENT_PROVIDER_REG:
+		dev->ready_count = 0;
 		break;
 
 	case VFRAME_EVENT_PROVIDER_START:
-		dev->framecount = 0;
-		dev->info.frames_decoded = 0;
-		dev->info.frames_ready = 0;
+		dev->ready_count = 0;
+		//dev->info.frames_decoded = 0;
+		//dev->info.frames_ready = 0;
 		break;
 
 	case VFRAME_EVENT_PROVIDER_QUREY_STATE:
@@ -483,16 +485,16 @@ static int vfm_grabber_receiver_event_fun(int type, void *data, void *private_da
 		break;
 
 	case VFRAME_EVENT_PROVIDER_VFRAME_READY:
-		dev->info.frames_ready++;
-		dev->info.frames_decoded++;
+		//dev->info.frames_ready++;
+		//dev->info.frames_decoded++;
 
-		if (dev->framecount == 0)
-			do_gettimeofday(&dev->starttime);
+		//if (dev->framecount == 0)
+		//	do_gettimeofday(&dev->starttime);
 
-		do_gettimeofday(&frametime);
-		elapsedtime = (frametime.tv_sec * 1000000 + frametime.tv_usec) - (dev->starttime.tv_sec * 1000000 + dev->starttime.tv_usec);
+		//do_gettimeofday(&frametime);
+		//elapsedtime = (frametime.tv_sec * 1000000 + frametime.tv_usec) - (dev->starttime.tv_sec * 1000000 + dev->starttime.tv_usec);
 
-		dev->framecount++;
+		++dev->ready_count;
 
 		//log_info("Got VFRAME_EVENT_PROVIDER_VFRAME_READY, Framerate = %d / %d\n", dev->framecount, elapsedtime);
 
@@ -505,8 +507,9 @@ static int vfm_grabber_receiver_event_fun(int type, void *data, void *private_da
 	return 0;
 }
 
-static const struct vframe_receiver_op_s vfm_grabber_vf_receiver = { .event_cb =
-  vfm_grabber_receiver_event_fun };
+static const struct vframe_receiver_op_s vfm_grabber_vf_receiver = {
+	.event_cb = vfm_grabber_receiver_event_fun 
+};
 
 //////////////////////////////////////////////////
 // File operations functions
@@ -520,116 +523,178 @@ static const struct vframe_receiver_op_s vfm_grabber_vf_receiver = { .event_cb =
 static long vfm_grabber_ioctl(struct file *file, unsigned int cmd, ulong arg)
 {
 	int ret = 0;
-	vfm_grabber_frame frame = { 0 };
-	struct vframe_s *vf;
+	//vfm_grabber_frame frame = { 0 };
+	//struct vframe_s *vf;
 	vfm_grabber_dev *dev = (vfm_grabber_dev *)(&grabber_dev);
+	vfm_grabber_dev_private* priv = (vfm_grabber_dev_private*)file->private_data;
 	struct canvas_s cs0;
-	struct canvas_s cs1;
-	struct canvas_s cs2;
-	int i;
+	//struct canvas_s cs1;
+	//struct canvas_s cs2;
+	//int i;
 	int waitResult;
+	vfm_grabber_frameinfo info;
+
+
+	ret = -1;
 
 	switch (cmd)
 	{
-	case VFM_GRABBER_GET_FRAME:
-		{
-			if (dev->info.frames_ready < 1)
-			{
-				// Timeout after 1 second.
-				waitResult = wait_event_timeout(waitQueue,
-					dev->info.frames_ready > 0,
-					1 * HZ);
-
-				if (waitResult == 0)
-				{
-					// Timeout occured
-					return -ETIME;
-				}
-			}
-
-			vf = vf_get(RECEIVER_NAME);
-			if (vf)
-			{
-				dev->info.frames_ready--;
-
-				//log_info("VFM_GRABBER_GET_FRAME ioctl peeked frame of type %d\n", vf->type);
-
-				// create the dmabuf fd if it's not been created yet
-				if (dev->buffer[vf->index].dmabuf[0] == NULL)
-				{
-					if (create_dmabuf(dev, vf->index, vf) < 0)
-					{
-						log_info("VFM_GRABBER_GET_FRAME create_dmabuf failed.\n");
-						return -1;
-					}
-				}
-
-				canvas_read(vf->canvas0Addr & 0xff, &cs0);
-				canvas_read(vf->canvas0Addr >> 8 & 0xff, &cs1);
-				canvas_read(vf->canvas0Addr >> 16 & 0xff, &cs2);
-
-
-				for (i = 0; i < MAX_PLANE_COUNT; ++i)
-				{
-					frame.dma_fd[i] = dev->buffer[vf->index].dma_fd[i];
-				}
-				frame.width = cs0.width;
-				frame.height = cs0.height;
-				frame.stride = cs0.width;
-				frame.priv = vf;
-				frame.cropWidth = vf->width;
-				frame.cropHeight = vf->height;
-
-				frame.canvas_plane0.index = cs0.index;
-				frame.canvas_plane0.addr = cs0.addr;
-				frame.canvas_plane0.width = cs0.width;
-				frame.canvas_plane0.height = cs0.height;
-
-				frame.canvas_plane1.index = cs1.index;
-				frame.canvas_plane1.addr = cs1.addr;
-				frame.canvas_plane1.width = cs1.width;
-				frame.canvas_plane1.height = cs1.height;
-
-				frame.canvas_plane2.index = cs2.index;
-				frame.canvas_plane2.addr = cs2.addr;
-				frame.canvas_plane2.width = cs2.width;
-				frame.canvas_plane2.height = cs2.height;
-
-
-				return copy_to_user((void*)arg, &frame, sizeof(frame));
-			}
-			else
-			{
-				// This should not happen
-				log_info("VFM_GRABBER_GET_FRAME ioctl bad code path.\n");
-				return -ENODATA;
-			}
-
-			return 0;
-		}
-		break;
-
-	case VFM_GRABBER_GET_INFO:
-		return copy_to_user((void*)arg, &dev->info, sizeof(dev->info));
-		break;
-
-	case VFM_GRABBER_PUT_FRAME:
+	case VFM_GRABBER_GRAB_FRAME:
 	{
-		//log_info("VFM_GRABBER_PUT_FRAME ioctl called\n");
-
-		// TODO: Don't trust userspace! Need to validate vf
-
-		// Returns number of bytes that could not be copied. On success, this will be zero. 
-		ret = copy_from_user(&frame, (void*)arg, sizeof(frame));
-		if (ret != 0)
+		if (priv->vf)
 		{
-			ret = -1;	// TODO: find an error code
-			break;
+			vf_put(priv->vf, RECEIVER_NAME);
+			priv->vf = NULL;
 		}
 
-		vf_put(frame.priv, RECEIVER_NAME);
-		break;
+		// TODO: bloacl/non-block mode
+		if (dev->ready_count < 1)
+		{
+			//// Timeout after 1 second.
+			//waitResult = wait_event_timeout(waitQueue,
+			//	dev->ready_count > 0,
+			//	1 * HZ);
+
+			//if (waitResult == 0)
+			//{
+				// Timeout occured
+				return -ETIME;
+			//}
+		}
+
+		priv->vf = vf_get(RECEIVER_NAME);
+		if (priv->vf)
+		{
+			--dev->ready_count;
+
+			//log_info("VFM_GRABBER_GET_FRAME ioctl peeked frame of type %d\n", vf->type);
+
+			//// create the dmabuf fd if it's not been created yet
+			//if (dev->buffer[vf->index].dmabuf[0] == NULL)
+			//{
+			//	if (create_dmabuf(dev, vf->index, vf) < 0)
+			//	{
+			//		log_info("VFM_GRABBER_GET_FRAME create_dmabuf failed.\n");
+			//		return -1;
+			//	}
+			//}
+
+			//canvas_read(vf->canvas0Addr & 0xff, &cs0);
+			//canvas_read(vf->canvas0Addr >> 8 & 0xff, &cs1);
+			//canvas_read(vf->canvas0Addr >> 16 & 0xff, &cs2);
+
+
+			//for (i = 0; i < MAX_PLANE_COUNT; ++i)
+			//{
+			//	frame.dma_fd[i] = dev->buffer[vf->index].dma_fd[i];
+			//}
+			//frame.width = cs0.width;
+			//frame.height = cs0.height;
+			//frame.stride = cs0.width;
+			//frame.priv = vf;
+			//frame.cropWidth = vf->width;
+			//frame.cropHeight = vf->height;
+
+			//frame.canvas_plane0.index = cs0.index;
+			//frame.canvas_plane0.addr = cs0.addr;
+			//frame.canvas_plane0.width = cs0.width;
+			//frame.canvas_plane0.height = cs0.height;
+
+			//frame.canvas_plane1.index = cs1.index;
+			//frame.canvas_plane1.addr = cs1.addr;
+			//frame.canvas_plane1.width = cs1.width;
+			//frame.canvas_plane1.height = cs1.height;
+
+			//frame.canvas_plane2.index = cs2.index;
+			//frame.canvas_plane2.addr = cs2.addr;
+			//frame.canvas_plane2.width = cs2.width;
+			//frame.canvas_plane2.height = cs2.height;
+
+			memset(&info, 0, sizeof(info));
+
+			// TODO: Fill in data to return
+			info.index = priv->vf->index;
+			info.type = priv->vf->type;
+			info.duration = priv->vf->duration;
+			info.duration_pulldown = priv->vf->duration_pulldown;
+			info.pts = priv->vf->pts;
+			info.pts_us64 = priv->vf->pts_us64;
+			info.flag = priv->vf->flag;
+
+			info.canvas0Addr = priv->vf->canvas0Addr;
+			info.canvas1Addr = priv->vf->canvas1Addr;
+
+			info.bufWidth = priv->vf->bufWidth;
+			info.width = priv->vf->width;
+			info.height = priv->vf->height;
+			info.ratio_control = priv->vf->ratio_control;
+			info.bitdepth = priv->vf->bitdepth;
+
+			canvas_read(priv->vf->canvas0Addr & 0xff, &cs0);
+			info.canvas0plane0.index = cs0.index;
+			info.canvas0plane0.addr = cs0.addr;
+			info.canvas0plane0.width = cs0.width;
+			info.canvas0plane0.height = cs0.height;
+
+			canvas_read(priv->vf->canvas0Addr >> 8 & 0xff, &cs0);
+			info.canvas0plane1.index = cs0.index;
+			info.canvas0plane1.addr = cs0.addr;
+			info.canvas0plane1.width = cs0.width;
+			info.canvas0plane1.height = cs0.height;
+
+			canvas_read(priv->vf->canvas0Addr >> 16 & 0xff, &cs0);
+			info.canvas0plane2.index = cs0.index;
+			info.canvas0plane2.addr = cs0.addr;
+			info.canvas0plane2.width = cs0.width;
+			info.canvas0plane2.height = cs0.height;
+
+
+			return copy_to_user((void*)arg, &info, sizeof(info));
+		}
+		else
+		{
+			// This should not happen
+			log_info("VFM_GRABBER_GET_FRAME ioctl bad code path.\n");
+			return -ENODATA;
+		}
+
+		//return 0;
 	}
+	break;
+
+	case VFM_GRABBER_HINT_INVALIDATE:
+	{
+		if (priv->vf)
+		{
+			vf_put(priv->vf, RECEIVER_NAME);
+			priv->vf = NULL;
+		}
+
+		return 0;
+	}
+	break;
+
+	//case VFM_GRABBER_GET_INFO:
+	//	return copy_to_user((void*)arg, &dev->info, sizeof(dev->info));
+	//	break;
+
+	//case VFM_GRABBER_PUT_FRAME:
+	//{
+	//	//log_info("VFM_GRABBER_PUT_FRAME ioctl called\n");
+
+	//	// TODO: Don't trust userspace! Need to validate vf
+
+	//	// Returns number of bytes that could not be copied. On success, this will be zero. 
+	//	ret = copy_from_user(&frame, (void*)arg, sizeof(frame));
+	//	if (ret != 0)
+	//	{
+	//		ret = -1;	// TODO: find an error code
+	//		break;
+	//	}
+
+	//	vf_put(frame.priv, RECEIVER_NAME);
+	//	break;
+	//}
 
 	}
 
@@ -638,14 +703,35 @@ static long vfm_grabber_ioctl(struct file *file, unsigned int cmd, ulong arg)
 
 static int vfm_grabber_open(struct inode *inode, struct file *file)
 {
-	int ret = 0;
-	return ret;
+	vfm_grabber_dev_private* priv;
+
+	priv = kmalloc(sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+	{
+		return -ENOMEM;
+	}
+
+	memset(priv, 0, sizeof(*priv));
+
+	priv->dev = grabber_dev.file_device;
+	
+	file->private_data = priv;
+
+	return 0;
 }
 
 static int vfm_grabber_release(struct inode *inode, struct file *file)
 {
-	int ret = 0;
-	return ret;
+	vfm_grabber_dev_private* priv = file->private_data;
+
+	if (priv->vf)
+	{
+		vf_put(priv->vf, RECEIVER_NAME);		
+	}
+
+	kfree(priv);
+
+	return 0;
 }
 
 
@@ -681,7 +767,7 @@ static int vfm_grabber_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	grabber_dev.version_major = ret;
+	grabber_dev.device_major = ret;
 
 	grabber_dev.device_class = class_create(THIS_MODULE, DEVICE_NAME);
 	if (!grabber_dev.device_class)
@@ -691,7 +777,7 @@ static int vfm_grabber_probe(struct platform_device *pdev)
 	}
 
 	grabber_dev.file_device = device_create(grabber_dev.device_class, NULL,
-		MKDEV(grabber_dev.version_major, VERSION_MINOR),
+		MKDEV(grabber_dev.device_major, VERSION_MINOR),
 		NULL, DEVICE_NAME);
 	if (!grabber_dev.file_device)
 	{
@@ -713,11 +799,11 @@ static int vfm_grabber_remove(struct platform_device *pdev)
 	vf_unreg_receiver(&grabber_dev.vfm_vf_receiver);
 	//vf_receiver_free(&grabber_dev.vfm_vf_receiver);
 
-	device_destroy(grabber_dev.device_class, MKDEV(grabber_dev.version_major, VERSION_MINOR));
+	device_destroy(grabber_dev.device_class, MKDEV(grabber_dev.device_major, VERSION_MINOR));
 
 	class_destroy(grabber_dev.device_class);
 
-	unregister_chrdev(VERSION_MAJOR, DEVICE_NAME);
+	unregister_chrdev(grabber_dev.device_major, DEVICE_NAME);
 
 	return 0;
 }
@@ -725,34 +811,36 @@ static int vfm_grabber_remove(struct platform_device *pdev)
 //////////////////////////////////////////////////
 // Module Init / Exit functions 
 //////////////////////////////////////////////////
-static const struct of_device_id vfm_grabber_dt_match[] =
-{
-  {
-	.compatible = "amlogic, vfm_grabber",
-  },
-  {},
-};
+//static const struct of_device_id vfm_grabber_dt_match[] =
+//{
+//  {
+//	.compatible = "amlogic, vfm_grabber",
+//  },
+//  {},
+//};
 
-static struct platform_driver vfm_grabber_driver =
-{
-  .probe = vfm_grabber_probe,
-  .remove = vfm_grabber_remove,
-  .driver =
-  {
-	.name = DRIVER_NAME,
-	.owner = THIS_MODULE,
-	.of_match_table = vfm_grabber_dt_match,
-  }
-};
+//static struct platform_driver vfm_grabber_driver =
+//{
+//  .probe = vfm_grabber_probe,
+//  .remove = vfm_grabber_remove,
+//  .driver =
+//  {
+//	.name = DRIVER_NAME,
+//	.owner = THIS_MODULE,
+//	.of_match_table = vfm_grabber_dt_match,
+//  }
+//};
 
 
 static int __init vfm_grabber_init(void)
 {
-	if (platform_driver_register(&vfm_grabber_driver))
-	{
-		log_error("failed to register vfm_grabber module\n");
-		return -ENODEV;
-	}
+	//if (platform_driver_register(&vfm_grabber_driver))
+	//{
+	//	log_error("failed to register vfm_grabber module\n");
+	//	return -ENODEV;
+	//}
+
+	vfm_grabber_probe(NULL);
 
 	log_info("module initialized successfully\n");
 	return 0;
@@ -760,7 +848,9 @@ static int __init vfm_grabber_init(void)
 
 static void __exit vfm_grabber_exit(void)
 {
-	platform_driver_unregister(&vfm_grabber_driver);
+	//platform_driver_unregister(&vfm_grabber_driver);
+
+	vfm_grabber_remove(NULL);
 	log_info("module exited\n");
 	return;
 }
